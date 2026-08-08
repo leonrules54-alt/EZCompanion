@@ -1,0 +1,29 @@
+# The deployed site is the landing page (index.html) only.
+# Everything below is the desktop app (Electron) — not for the web.
+
+# App windows (desktop only)
+app.html
+button.html
+status.html
+week.html
+notes.html
+deadline-alert.html
+overlay-screenshot.html
+
+# App assets / main process (desktop only)
+renderer.js
+style.css
+preload.js
+main.js
+server.js
+wolf.png
+
+# Electron packaging & build tooling (not part of the static site)
+forge.config.js
+package.json
+package-lock.json
+scripts/
+out/
+dist/
+build/
+node_modules/

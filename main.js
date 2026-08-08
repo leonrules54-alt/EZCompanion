@@ -124,7 +124,9 @@ function createPetWindow() {
   });
 
   hardenWindow(petWindow);
-  loadAppFile(petWindow, 'index.html');
+  // app.html = the planner dashboard renderer. It was renamed from index.html
+  // so the deployed site's root (index.html) can host the landing page.
+  loadAppFile(petWindow, 'app.html');
   watchRenderer(petWindow, 'pet');
 
   // Click-through by default — the renderer's interactive bounds (planner
