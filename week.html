@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>EZCompanion Week</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { background: transparent; overflow: hidden; }
+  body {
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    font-family: 'Comfortaa', 'Segoe UI', system-ui, sans-serif;
+    user-select: none;
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+    color: #e8edff;
+  }
+  /* The week strip: a wide glass card pinned to the top of the screen. */
+  #week {
+    position: relative;
+    flex: 1;
+    margin: 6px;
+    display: flex;
+    flex-direction: column;
+    border-radius: 18px;
+    background:
+      linear-gradient(165deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.03) 36%, rgba(9, 14, 27, 0.45) 100%),
+      rgba(9, 14, 27, 0.85);
+    backdrop-filter: blur(16px) saturate(1.35) brightness(1.05);
+    -webkit-backdrop-filter: blur(16px) saturate(1.35) brightness(1.05);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-top: 1px solid rgba(255, 255, 255, 0.28);
+    box-shadow:
+      0 14px 48px rgba(0, 0, 0, 0.5),
+      inset 0 1px 0 rgba(255, 255, 255, 0.16);
+    overflow: hidden;
+  }
+  /* LED light strip along the top edge (matches the app's glass) */
+  #week::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background: linear-gradient(90deg, rgba(34, 211, 238, 0.9), rgba(139, 92, 246, 0.95) 30%, rgba(236, 72, 153, 0.9) 60%, rgba(251, 191, 36, 0.9));
+    -webkit-mask: linear-gradient(180deg, #000 0 3px, transparent 3px 100%);
+    mask: linear-gradient(180deg, #000 0 3px, transparent 3px 100%);
+    opacity: 0.9;
+  }
+  .wk-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px 8px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    flex-shrink: 0;
+  }
+  .wk-brand {
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+  }
+  .wk-brand em { font-style: normal; color: #9dabcf; font-weight: 600; font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; }
+  .wk-actions { margin-left: auto; display: flex; gap: 5px; }
+  .wk-btn {
+    height: 26px;
+    min-width: 26px;
+    padding: 0 8px;
+    border-radius: 9px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    background: rgba(255, 255, 255, 0.08);
+    color: #dbe4ff;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+  }
+  .wk-btn:hover {
+    background: rgba(255, 255, 255, 0.28);
+    border-color: rgba(255, 255, 255, 0.5);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3), 0 0 12px rgba(99, 102, 241, 0.35);
+  }
+  .wk-btn:active { transform: scale(0.94); }
+  /* The currently-active view mode reads as a glowing pill. Scoped under
+     .wk-actions so it outranks the light-theme .wk-btn overrides below. */
+  .wk-actions .wk-btn.active {
+    background: linear-gradient(135deg, rgba(34, 211, 238, 0.45), rgba(139, 92, 246, 0.55));
+    border-color: rgba(167, 139, 250, 0.75);
+    color: #fff;
+    box-shadow: 0 0 12px rgba(139, 92, 246, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  }
+  .wk-actions .wk-btn.active:hover {
+    background: linear-gradient(135deg, rgba(34, 211, 238, 0.6), rgba(139, 92, 246, 0.7));
+    color: #fff;
+  }
+
+  /* Mon–Sun day columns (empty days are omitted) */
+  .wk-days {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    gap: 8px;
+    padding: 10px 12px 12px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+  }
+  .wk-day {
+    flex: 1 1 140px;
+    max-width: 240px;
+    min-width: 132px;
+    display: flex;
+    flex-direction: column;
+    border-radius: 13px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.07);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    padding: 7px 9px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+    overflow: hidden;
+  }
+  .wk-day:hover {
+    background: rgba(255, 255, 255, 0.14);
+    border-color: rgba(255, 255, 255, 0.3);
+    transform: translateY(-2px);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 6px 18px rgba(0, 0, 0, 0.28), 0 0 16px rgba(99, 102, 241, 0.22);
+  }
+  .wk-day.today {
+    border-color: rgba(34, 211, 238, 0.6);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 0 0 1px rgba(34, 211, 238, 0.35), 0 0 18px rgba(34, 211, 238, 0.25);
+  }
+  /* Days before today: dashed border + muted header mark them as history,
+     but the crossed-out items inside stay fully legible. */
+  .wk-day.past {
+    background: rgba(255, 255, 255, 0.035);
+    border-style: dashed;
+    border-color: rgba(255, 255, 255, 0.14);
+    box-shadow: none;
+  }
+  .wk-day.past:hover {
+    background: rgba(255, 255, 255, 0.09);
+    border-color: rgba(255, 255, 255, 0.3);
+  }
+  .wk-day.past .wk-dow { color: rgba(199, 210, 254, 0.5); }
+  .wk-day-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 6px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    margin-bottom: 6px;
+    flex-shrink: 0;
+  }
+  .wk-dow {
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: rgba(199, 210, 254, 0.75);
+  }
+  .wk-day.today .wk-dow { color: #67e8f9; }
+  .wk-num {
+    font-size: 12px;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+  }
+  .wk-items {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+  }
+  .wk-items::-webkit-scrollbar { width: 4px; }
+  .wk-items::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 4px; }
+  .wk-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 10.5px;
+    line-height: 1.25;
+    padding: 4px 6px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .wk-item b { font-weight: 700; overflow: hidden; text-overflow: ellipsis; }
+  .wk-item.dl { border-left: 2.5px solid #f87171; }
+  .wk-item.tk { border-left: 2.5px solid #34d399; }
+  /* Crossed-out items (completed, or on a day that already passed): the
+     strike-through stays bold and the category/deadline colour stays vivid. */
+  .wk-item.done { text-decoration: line-through; text-decoration-thickness: 1.5px; }
+  .wk-item.done b,
+  .wk-item.done .wk-time { opacity: 0.55; }
+  .wk-time { margin-left: auto; font-size: 9px; font-weight: 700; color: #fda4af; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+  .wk-empty {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    color: rgba(157, 171, 207, 0.8);
+    font-style: italic;
+  }
+
+  /* === Follow the app theme palette (body[data-theme] set below) === */
+  body[data-theme="white"] #week,
+  body[data-theme="light-blue"] #week,
+  body[data-theme="pink"] #week,
+  body[data-theme="purple"] #week {
+    background: linear-gradient(165deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.92) 40%, rgba(226, 232, 240, 0.95) 100%);
+    border-color: rgba(15, 23, 42, 0.16);
+    border-top-color: rgba(255, 255, 255, 0.95);
+    color: #0f172a;
+    box-shadow: 0 14px 48px rgba(15, 23, 42, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.95);
+  }
+  body[data-theme="white"] .wk-brand em,
+  body[data-theme="light-blue"] .wk-brand em,
+  body[data-theme="pink"] .wk-brand em,
+  body[data-theme="purple"] .wk-brand em { color: #475569; }
+  body[data-theme="white"] .wk-btn,
+  body[data-theme="light-blue"] .wk-btn,
+  body[data-theme="pink"] .wk-btn,
+  body[data-theme="purple"] .wk-btn { background: rgba(15, 23, 42, 0.07); border-color: rgba(15, 23, 42, 0.18); color: #334155; }
+  body[data-theme="white"] .wk-btn:hover,
+  body[data-theme="light-blue"] .wk-btn:hover,
+  body[data-theme="pink"] .wk-btn:hover,
+  body[data-theme="purple"] .wk-btn:hover { background: rgba(15, 23, 42, 0.16); color: #0f172a; }
+  body[data-theme="white"] .wk-day,
+  body[data-theme="light-blue"] .wk-day,
+  body[data-theme="pink"] .wk-day,
+  body[data-theme="purple"] .wk-day { background: rgba(15, 23, 42, 0.05); border-color: rgba(15, 23, 42, 0.12); }
+  body[data-theme="white"] .wk-day.past,
+  body[data-theme="light-blue"] .wk-day.past,
+  body[data-theme="pink"] .wk-day.past,
+  body[data-theme="purple"] .wk-day.past { background: rgba(15, 23, 42, 0.03); border-color: rgba(15, 23, 42, 0.14); }
+  body[data-theme="white"] .wk-day:hover,
+  body[data-theme="light-blue"] .wk-day:hover,
+  body[data-theme="pink"] .wk-day:hover,
+  body[data-theme="purple"] .wk-day:hover { background: rgba(15, 23, 42, 0.1); border-color: rgba(15, 23, 42, 0.24); }
+  body[data-theme="white"] .wk-dow,
+  body[data-theme="light-blue"] .wk-dow,
+  body[data-theme="pink"] .wk-dow,
+  body[data-theme="purple"] .wk-dow { color: #64748b; }
+  body[data-theme="white"] .wk-item,
+  body[data-theme="light-blue"] .wk-item,
+  body[data-theme="pink"] .wk-item,
+  body[data-theme="purple"] .wk-item { background: rgba(255, 255, 255, 0.65); border-color: rgba(15, 23, 42, 0.08); }
+  body[data-theme="white"] .wk-empty,
+  body[data-theme="light-blue"] .wk-empty,
+  body[data-theme="pink"] .wk-empty,
+  body[data-theme="purple"] .wk-empty { color: #64748b; }
+  /* Colored themes tint the strip's glass */
+  body[data-theme="black"] #week { background: linear-gradient(165deg, rgba(25, 25, 25, 0.9), rgba(0, 0, 0, 0.93) 100%); }
+  body[data-theme="dark-blue"] #week { background: linear-gradient(165deg, rgba(37, 99, 235, 0.85), rgba(23, 37, 84, 0.9) 60%, rgba(15, 23, 42, 0.92) 100%); }
+  body[data-theme="green"] #week { background: linear-gradient(165deg, rgba(16, 185, 129, 0.85), rgba(6, 95, 70, 0.9) 60%, rgba(4, 60, 44, 0.92) 100%); }
+  body[data-theme="red"] #week { background: linear-gradient(165deg, rgba(239, 68, 68, 0.85), rgba(153, 27, 27, 0.9) 60%, rgba(69, 10, 10, 0.92) 100%); }
+  body[data-theme="pink"] #week { background: linear-gradient(165deg, rgba(254, 205, 211, 0.95), rgba(236, 72, 153, 0.85) 60%, rgba(190, 24, 93, 0.9) 100%); }
+  body[data-theme="purple"] #week { background: linear-gradient(165deg, rgba(237, 233, 254, 0.95), rgba(139, 92, 246, 0.85) 60%, rgba(76, 29, 149, 0.9) 100%); }
+  body[data-theme="light-blue"] #week { background: linear-gradient(165deg, rgba(219, 234, 254, 0.95), rgba(56, 189, 248, 0.85) 60%, rgba(14, 116, 221, 0.9) 100%); }
+</style>
+<script>
+  // Follow the app's theme palette (chosen in the planner, persisted in 'wolf-theme').
+  try { document.body.dataset.theme = localStorage.getItem('wolf-theme') || ''; } catch (e) {}
+</script>
+</head>
+<body>
+  <div id="week">
+    <div class="wk-head">
+      <span class="wk-brand">🗓️ Week <em>Mon – Sun</em></span>
+      <div class="wk-actions">
+        <button class="wk-btn active" id="wk-week" title="Week view (current)">🗓️ Week</button>
+        <button class="wk-btn" id="wk-tasks" title="Tasks view">🎯 Tasks</button>
+        <button class="wk-btn" id="wk-cal" title="Calendar view">📅 Calendar</button>
+        <button class="wk-btn" id="wk-close" title="Close">✕</button>
+      </div>
+    </div>
+    <div class="wk-days" id="wk-days"></div>
+  </div>
+  <script>
+    // Defensive shim: everything needs the preload bridge (this window only
+    // runs inside Electron, where the bridges exist).
+    const api = window.electronAPI || {
+      setMode() {}, weekDayClick() {}, updateWeekBounds() {},
+    };
+
+    const DAY_NAMES = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+    const pad2 = (n) => String(n).padStart(2, '0');
+    const dayKey = (d) => d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+    }[c]));
+
+    function loadItems() {
+      let deadlines = [], tasks = [], categories = [];
+      try { deadlines = JSON.parse(localStorage.getItem('wolf-deadlines')) || []; } catch (e) {}
+      try { tasks = JSON.parse(localStorage.getItem('wolf-tasks')) || []; } catch (e) {}
+      try { categories = JSON.parse(localStorage.getItem('wolf-categories')) || []; } catch (e) {}
+      return { deadlines, tasks, categories };
+    }
+
+    function fmtTime(time) {
+      if (!time) return '';
+      const d = new Date('2000-01-01T' + time);
+      return isNaN(d) ? time : d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    }
+
+    const daysEl = document.getElementById('wk-days');
+    let lastHash = '';
+
+    function sendBounds() {
+      const bounds = [];
+      const head = document.querySelector('.wk-head');
+      if (head) {
+        const r = head.getBoundingClientRect();
+        bounds.push({ x: r.left, y: r.top, w: r.width, h: r.height });
+      }
+      document.querySelectorAll('.wk-day').forEach((el) => {
+        const r = el.getBoundingClientRect();
+        bounds.push({ x: r.left, y: r.top, w: r.width, h: r.height });
+      });
+      api.updateWeekBounds(bounds);
+    }
+
+    function render() {
+      const now = new Date();
+      const todayKey = dayKey(now);
+      const { deadlines, tasks, categories } = loadItems();
+      // Category colours come along so crossed-out tasks keep their group hue.
+      const catById = {};
+      categories.forEach((c) => { catById[c.id] = c; });
+      // Skip re-rendering when nothing changed (keeps day-column scroll
+      // positions stable across the 4s poll; the date is in the hash so the
+      // week rolls over at midnight).
+      const hash = todayKey + '|' + JSON.stringify(deadlines) + '|' + JSON.stringify(tasks) + '|' + JSON.stringify(categories);
+      if (hash === lastHash && daysEl.childNodes.length) return;
+      lastHash = hash;
+      // Monday of the current week — the strip always spans Mon→Sun, so every
+      // one of the 7 columns is shown. Days before today are grayed out.
+      const monday = new Date(now);
+      monday.setDate(now.getDate() - ((now.getDay() + 6) % 7));
+      const byKey = {};
+      deadlines.forEach((dl) => { (byKey[dl.due] = byKey[dl.due] || { dls: [], tks: [] }).dls.push(dl); });
+      tasks.forEach((t) => { (byKey[t.due] = byKey[t.due] || { dls: [], tks: [] }).tks.push(t); });
+
+      daysEl.innerHTML = '';
+      for (let i = 0; i < 7; i++) {
+        const d = new Date(monday);
+        d.setDate(monday.getDate() + i);
+        const key = dayKey(d);
+        const group = byKey[key] || { dls: [], tks: [] };
+        const isPast = key < todayKey;
+
+        const col = document.createElement('div');
+        col.className = 'wk-day' + (key === todayKey ? ' today' : '') + (isPast ? ' past' : '');
+        col.title = 'Open in calendar';
+        const head = document.createElement('div');
+        head.className = 'wk-day-head';
+        head.innerHTML = '<span class="wk-dow">' + DAY_NAMES[d.getDay()] + '</span>' +
+          '<span class="wk-num">' + (d.getMonth() + 1) + '/' + d.getDate() + '</span>';
+        const items = document.createElement('div');
+        items.className = 'wk-items';
+        const html = [];
+        group.dls.forEach((dl) => {
+          // Past days are completed history: every item on them is crossed out.
+          html.push('<div class="wk-item dl' + ((dl.done || isPast) ? ' done' : '') + '">⏰ <b>' + esc(dl.name) + '</b>' +
+            (dl.time ? '<span class="wk-time">' + esc(fmtTime(dl.time)) + '</span>' : '') + '</div>');
+        });
+        group.tks.forEach((t) => {
+          // Tasks keep their category colour on the left edge, even crossed out.
+          const cat = catById[t.category] || null;
+          const style = cat ? ' style="border-left-color:' + esc(cat.color) + '"' : '';
+          html.push('<div class="wk-item tk' + ((t.done || isPast) ? ' done' : '') + '"' + style + '>✅ <b>' + esc(t.name) + '</b></div>');
+        });
+        if (html.length) {
+          items.innerHTML = html.join('');
+        } else {
+          // Empty day: a subtle placeholder so the column still reads as a day.
+          items.innerHTML = '<div class="wk-empty">—</div>';
+        }
+        col.append(head, items);
+        // Click a day → open the calendar view focused on that day.
+        col.addEventListener('click', () => api.weekDayClick(key));
+        daysEl.appendChild(col);
+      }
+      sendBounds();
+    }
+
+    document.getElementById('wk-week').addEventListener('click', () => api.setMode('week'));
+    document.getElementById('wk-tasks').addEventListener('click', () => api.setMode('tasks'));
+    document.getElementById('wk-cal').addEventListener('click', () => api.setMode('calendar'));
+    document.getElementById('wk-close').addEventListener('click', () => api.setMode('tasks'));
+
+    render();
+    // The sidebar saves tasks/deadlines to localStorage; poll so the strip
+    // stays in sync without needing cross-window messaging.
+    setInterval(render, 4000);
+    window.addEventListener('resize', sendBounds);
+  </script>
+</body>
+</html>

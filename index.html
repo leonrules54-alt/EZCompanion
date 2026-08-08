@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EZCompanion</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- === Main Container === -->
+  <div id="app">
+
+    <!-- Browser-only launcher button: in Electron the floating launcher
+         window (button.html) provides this menu instead, so this button and
+         the ring menu below are hidden there. Resting on it ~2.5s opens the
+         ring (same hover-arm as the Electron launcher). -->
+    <span class="browser-arm-ring" id="browser-arm-ring"></span>
+    <button id="browser-launcher" class="browser-launcher" title="Hold to open menu">✦</button>
+    <span class="browser-arm-timer" id="browser-arm-timer"></span>
+
+    <!-- Futuristic segmented Glass Ring Menu (browser preview only — opens
+         around the launcher button; hidden in Electron where button.html
+         owns the ring) -->
+    <div id="radial-menu">
+      <div class="ring-glass"></div>
+      <div class="ring-shimmer"></div>
+      <svg id="ring-segments" viewBox="0 0 280 280" xmlns="http://www.w3.org/2000/svg" aria-label="App menu"></svg>
+    </div>
+
+    <!-- === Info Popup (clock / weather / quote) === -->
+    <div id="info-popup" class="popup-hidden">
+      <div class="popup-glass">
+        <button class="popup-close" id="popup-close">✕</button>
+        <div class="popup-section">
+          <div class="popup-time" id="popup-time">12:00</div>
+          <div class="popup-date" id="popup-date">Loading...</div>
+        </div>
+        <div class="popup-divider"></div>
+        <div class="popup-section weather-section">
+          <div class="weather-icon" id="weather-icon">☀️</div>
+          <div class="weather-temp" id="weather-temp">72°F</div>
+          <div class="weather-desc" id="weather-desc">Sunny</div>
+        </div>
+        <div class="popup-divider"></div>
+        <div class="popup-section quote-section">
+          <div class="quote-text" id="quote-text">You're doing great today!</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- === Clipboard Vault (past copies — click to re-copy) === -->
+    <div id="clipboard-vault" class="popup-hidden">
+      <div class="popup-glass vault-glass">
+        <button class="popup-close" id="vault-close">✕</button>
+        <div class="vault-title">📋 Clipboard History</div>
+        <div class="vault-list" id="vault-list"></div>
+        <button class="btn btn-ghost btn-block" id="vault-clear">Clear history</button>
+      </div>
+    </div>
+
+    <!-- === Quick Notes (browser fallback panel; Electron uses its own
+         floating notes window) === -->
+    <div id="notes-panel" class="panel-hidden">
+      <div class="panel-glass notes-glass">
+        <h3>📝 Quick Notes</h3>
+        <button class="popup-close" id="notes-close">✕</button>
+        <textarea id="notes-input" placeholder="Write a quick note..."></textarea>
+        <button class="btn btn-primary btn-block" id="notes-save">Save note</button>
+        <div class="notes-list" id="notes-list"></div>
+      </div>
+    </div>
+
+    <!-- === Planner: Deadlines (top half) + Daily Tasks (bottom half) ===
+         Always visible, filling the sidebar from the very top. -->
+    <div id="tasks-panel">
+      <div class="tasks-panel-glass">
+        <div class="tasks-panel-header">
+          <div class="tasks-panel-title">
+            <span class="t-icon">🎯</span>
+            <span>Planner</span>
+          </div>
+          <div class="tasks-panel-actions">
+            <span class="streak-chip" id="streak-chip" title="Daily streak">🔥 0</span>
+            <button class="tp-btn" id="theme-open" title="Change theme">🎨</button>
+            <button class="tp-btn" id="categories-open" title="Manage categories">🗂</button>
+            <button class="tp-btn" id="tasks-hide" title="Hide planner">▁</button>
+          </div>
+        </div>
+
+        <!-- View mode bar: Tasks / Calendar / Week — one mode at a time -->
+        <div class="view-switch" id="view-switch">
+          <button class="vs-btn active" data-view="tasks" title="Tasks view">🎯 <span>Tasks</span></button>
+          <button class="vs-btn" data-view="calendar" title="Calendar view">📅 <span>Calendar</span></button>
+          <button class="vs-btn" data-view="week" title="Week view">🗓️ <span>Week</span></button>
+        </div>
+
+        <div class="planner-body">
+          <!-- Deadlines: name / date+time / due-in / edit / delete -->
+          <section class="planner-half deadlines-half">
+            <div class="section-head">
+              <span class="section-title">⏰ Deadlines</span>
+              <button class="tp-btn tp-btn-xs" id="deadline-add" title="Add deadline">＋</button>
+            </div>
+            <div class="section-list" id="deadlines-list"></div>
+          </section>
+
+          <!-- Daily tasks: name / date / time it takes / edit / delete -->
+          <section class="planner-half daily-half">
+            <div class="section-head">
+              <span class="section-title">✅ Daily Tasks</span>
+              <div class="filter-chips" id="tasks-filter">
+                <button class="fchip" data-days="0">Today</button>
+                <button class="fchip" data-days="3">3 Days</button>
+                <button class="fchip active" data-days="7">1 Week</button>
+              </div>
+              <button class="tp-btn tp-btn-xs" id="task-add" title="Add task">＋</button>
+            </div>
+            <div class="section-list" id="tasks-list"></div>
+          </section>
+        </div>
+
+        <!-- === Calendar view: month grid on top, that day's tasks + deadlines below === -->
+        <div id="calendar-view" hidden>
+          <div class="cal-head">
+            <button class="cal-nav" id="cal-prev" title="Previous month">‹</button>
+            <span class="cal-title" id="cal-title">Loading…</span>
+            <button class="cal-nav" id="cal-next" title="Next month">›</button>
+          </div>
+          <div class="cal-grid" id="cal-grid"></div>
+          <div class="cal-day-items">
+            <div class="cal-day-title" id="cal-day-title">Today</div>
+            <div class="cal-day-list" id="cal-day-list"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- === Theme palette (pops up at the bottom-left of the planner) === -->
+      <div id="theme-palette" class="palette-hidden">
+        <div class="palette-glass">
+          <div class="palette-title">🎨 Theme</div>
+          <div class="palette-grid" id="theme-grid"></div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- === Add/Edit modal (shared by deadlines + tasks) — floats centered
+         on the whole window, never over the planner === -->
+    <div class="task-modal" id="task-modal" hidden>
+      <div class="task-modal-glass">
+        <button class="popup-close" id="task-modal-close">✕</button>
+        <h3 id="item-modal-title">＋ New Deadline</h3>
+        <input id="im-name" type="text" placeholder="Name…" maxlength="60" autocomplete="off">
+        <div class="tm-label" id="im-cat-label" hidden>🗂 Category</div>
+        <div class="im-cats" id="im-cats" hidden></div>
+        <div class="tm-label">📅 Date</div>
+        <div class="tm-calendar" id="tm-calendar"></div>
+        <button class="btn btn-ghost btn-sm" id="im-none" type="button" title="Save without a date">No date</button>
+        <div class="tm-label" id="im-time-label">⏰ Due time</div>
+        <div class="tm-time">
+          <div class="tm-wheel" id="im-wheel-h">
+            <button class="tm-wheel-btn" data-dir="1" type="button">▲</button>
+            <div class="tm-wheel-list"></div>
+            <button class="tm-wheel-btn" data-dir="-1" type="button">▼</button>
+          </div>
+          <span class="tm-sep">:</span>
+          <div class="tm-wheel" id="im-wheel-m">
+            <button class="tm-wheel-btn" data-dir="1" type="button">▲</button>
+            <div class="tm-wheel-list"></div>
+            <button class="tm-wheel-btn" data-dir="-1" type="button">▼</button>
+          </div>
+          <!-- AM/PM picker — only shown for deadlines (hidden for task duration) -->
+          <div class="tm-wheel tm-wheel-ampm" id="im-wheel-ampm" hidden>
+            <button class="tm-wheel-btn" data-dir="1" type="button">▲</button>
+            <div class="tm-wheel-list"></div>
+            <button class="tm-wheel-btn" data-dir="-1" type="button">▼</button>
+          </div>
+        </div>
+        <button class="btn btn-primary btn-block" id="im-save">Save</button>
+      </div>
+    </div>
+
+    <!-- === Categories sidebar (slide-in from the left — add / rename /
+         recolor / delete task categories) === -->
+    <div id="categories-panel" class="panel-hidden">
+      <div class="cat-sidebar">
+        <div class="cat-head">
+          <span class="cat-title">🗂 Categories</span>
+          <button class="popup-close" id="categories-close" title="Close">✕</button>
+        </div>
+        <div class="cat-list" id="categories-list"></div>
+        <button class="btn btn-ghost btn-sm btn-block" id="categories-add">＋ Add category</button>
+      </div>
+    </div>
+
+    <!-- === Settings Panel === -->
+    <div id="settings-panel" class="panel-hidden">
+      <div class="panel-glass">
+        <h3>Settings</h3>
+        <button class="popup-close" id="settings-close">✕</button>
+        <label class="setting-row">
+          <span>Always on top</span>
+          <input type="checkbox" id="setting-ontop" checked>
+        </label>
+        <label class="setting-row">
+          <span>Weather display</span>
+          <input type="checkbox" id="setting-weather" checked>
+        </label>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

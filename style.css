@@ -1,0 +1,2638 @@
+/* === CSS Reset & Base === */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* Honor the hidden attribute even when a class sets display (author rules
+   would otherwise beat the UA [hidden] rule, e.g. .btn on the clear-done
+   button). */
+[hidden] { display: none !important; }
+
+:root {
+  --bg-0: #070b16;
+  --bg-1: #0d1322;
+  --bg-2: #131b33;
+  --text-main: #e8edff;
+  --text-dim: #9dabcf;
+  --glass-bg: rgba(13, 19, 34, 0.78);
+  --glass-bg-deep: rgba(9, 14, 27, 0.94);
+  --glass-border: rgba(255, 255, 255, 0.12);
+  --glass-border-bright: rgba(255, 255, 255, 0.22);
+  --accent-cyan: #22d3ee;
+  --accent-violet: #8b5cf6;
+  --accent-pink: #ec4899;
+  --accent-amber: #fbbf24;
+  --accent-emerald: #34d399;
+  --accent-blue: #60a5fa;
+  /* Themeable surface tokens — themes (body[data-theme=…]) swap these so the
+     whole planner recolors without touching individual rules. */
+  --surface-row: rgba(255, 255, 255, 0.10);
+  --surface-row-strong: rgba(255, 255, 255, 0.16);
+  --surface-panel: rgba(255, 255, 255, 0.07);
+  --surface-chip: rgba(255, 255, 255, 0.13);
+  --surface-btn: rgba(255, 255, 255, 0.08);
+  --surface-btn-hover: rgba(255, 255, 255, 0.32);
+  --surface-input: rgba(255, 255, 255, 0.08);
+  --hairline: rgba(255, 255, 255, 0.09);
+  --hairline-strong: rgba(255, 255, 255, 0.16);
+  --check-ring: rgba(255, 255, 255, 0.28);
+  --scroll-thumb: rgba(255, 255, 255, 0.2);
+  --glass-sheen: rgba(255, 255, 255, 0.12);
+  --glass-sheen-2: rgba(255, 255, 255, 0.03);
+  --glass-sheen-3: rgba(9, 14, 27, 0.55);
+  --divider-text: rgba(143, 156, 196, 0.75);
+  --divider-line: rgba(255, 255, 255, 0.18);
+  --placeholder: rgba(157, 171, 207, 0.7);
+  --shadow-pop:
+    0 14px 48px rgba(0, 0, 0, 0.55),
+    0 0 0 1px rgba(255, 255, 255, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  --radius: 18px;
+  --ease-pop: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --glow-violet: rgba(139, 92, 246, 0.4);
+  --glow-cyan: rgba(34, 211, 238, 0.32);
+  /* Fine film grain for the frosted glass (SVG fractal noise, white at ~12% alpha) */
+  --noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.12 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+body {
+  font-family: 'Comfortaa', 'Segoe UI', system-ui, sans-serif;
+  overflow: hidden;
+  user-select: none;
+  background: radial-gradient(120% 120% at 20% 10%, #16203d 0%, #0c1224 45%, #070b16 100%);
+  color: var(--text-main);
+  -webkit-app-region: no-drag;
+  cursor: default;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  -webkit-tap-highlight-color: transparent;
+}
+
+::selection {
+  background: rgba(139, 92, 246, 0.45);
+  color: #ffffff;
+}
+
+/* Electron mode: fully transparent body, no background */
+body.electron-mode {
+  background: transparent;
+  min-height: auto;
+}
+
+/* === App Container === */
+#app {
+  width: 430px;
+  height: 340px;
+  position: relative;
+  padding: 8px;
+}
+
+body.electron-mode #app {
+  pointer-events: none;
+  border-radius: 20px;
+  overflow: hidden;
+  /* The planner glass fills the window edge to edge. No padding in Electron
+     so the interactive hit-regions line up with the window-relative coords
+     used by the cursor poll. */
+  width: 100vw;
+  height: 100vh;
+  padding: 0;
+}
+
+/* All interactive children must explicitly re-enable pointer events.
+   IMPORTANT: panel glasses only become interactive when their panel is
+   VISIBLE — a hidden (opacity:0) panel glass with pointer-events:auto would
+   silently swallow clicks aimed at the planner underneath it. */
+body.electron-mode #info-popup:not(.popup-hidden) .popup-glass,
+body.electron-mode #clipboard-vault:not(.popup-hidden) .popup-glass,
+body.electron-mode #notes-panel:not(.panel-hidden) .panel-glass,
+body.electron-mode #tasks-panel:not(.panel-hidden),
+body.electron-mode #tasks-panel:not(.panel-hidden) .panel-glass,
+body.electron-mode #settings-panel:not(.panel-hidden) .panel-glass,
+body.electron-mode #task-modal,
+body.electron-mode #categories-panel:not(.panel-hidden) .cat-sidebar,
+body.electron-mode #theme-palette:not(.palette-hidden) {
+  pointer-events: auto;
+}
+
+/* === Futuristic Glass Ring Menu === */
+#radial-menu {
+  position: absolute;
+  z-index: 300;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.3);
+  transition: all 0.45s cubic-bezier(0.22, 0.61, 0.36, 1);
+  width: 280px;
+  height: 280px;
+}
+
+#radial-menu.open {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(0.6);
+}
+
+/* Electron: the floating launcher window (button.html) owns the ring menu —
+   the sidebar's copy (and its launcher button) are only for the plain
+   browser preview via server.js. */
+body.electron-mode #radial-menu,
+body.electron-mode #browser-launcher {
+  display: none !important;
+}
+
+/* === Glass Ring Backdrop (annulus) ===
+   The mask cuts the centre hole so the launcher button shows through, while the
+   backdrop-filter + translucent segments create the glass effect. */
+.ring-glass {
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  /* Layered color-shifting glass: a white sheen over a violet→cyan→pink→
+     mint gradient with a soft indigo bloom in the corner. */
+  background:
+    linear-gradient(165deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0.05) 38%, rgba(99, 102, 241, 0.10) 80%),
+    linear-gradient(135deg, rgba(139, 92, 246, 0.32), rgba(56, 189, 248, 0.16) 34%, rgba(236, 72, 153, 0.20) 68%, rgba(52, 211, 153, 0.14)),
+    radial-gradient(circle at 32% 26%, rgba(167, 139, 250, 0.5), rgba(20, 28, 54, 0.22) 62%);
+  backdrop-filter: blur(16px) saturate(1.5) brightness(1.08);
+  -webkit-backdrop-filter: blur(16px) saturate(1.5) brightness(1.08);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow:
+    0 14px 52px rgba(0, 0, 0, 0.55),
+    0 0 140px rgba(139, 92, 246, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.38),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.3);
+  -webkit-mask: radial-gradient(circle, transparent 0 88px, #000 90px 100%);
+  mask: radial-gradient(circle, transparent 0 88px, #000 90px 100%);
+  pointer-events: none;
+}
+
+/* Conic neon border — slower spin (12s) to reduce flicker, static glow instead */
+.ring-glass::before {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 0deg,
+    rgba(99, 102, 241, 1) 0%,
+    rgba(56, 189, 248, 1) 12.5%,
+    rgba(34, 211, 238, 1) 25%,
+    rgba(52, 211, 153, 1) 37.5%,
+    rgba(250, 204, 21, 1) 50%,
+    rgba(244, 114, 182, 1) 62.5%,
+    rgba(236, 72, 153, 1) 75%,
+    rgba(167, 139, 250, 1) 87.5%,
+    rgba(99, 102, 241, 1) 100%
+  );
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 6px), #000 calc(100% - 4px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 6px), #000 calc(100% - 4px));
+  /* Rainbow: the conic border spins AND its hue slowly cycles the full
+     spectrum, so the neon ring never looks static. */
+  animation: ringSpin 12s linear infinite, ringHue 9s linear infinite;
+  opacity: 0.9;
+  pointer-events: none;
+}
+
+@keyframes ringHue {
+  from { filter: saturate(1.3) brightness(1.08) hue-rotate(0deg); }
+  to   { filter: saturate(1.3) brightness(1.08) hue-rotate(360deg); }
+}
+
+/* Static soft glow replaces the pulsing ringGlow animation (flicker fix) */
+.ring-glass::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  -webkit-mask: radial-gradient(circle, transparent 0 88px, #000 90px 100%);
+  mask: radial-gradient(circle, transparent 0 88px, #000 90px 100%);
+  background: radial-gradient(circle at 50% 50%, rgba(167, 139, 250, 0.08), transparent 65%);
+  pointer-events: none;
+}
+
+@keyframes ringSpin {
+  to { transform: rotate(360deg); }
+}
+
+/* Soft light sweep drifting around the glass ring — masked to the annulus
+   so it only shimmers on the ring itself (not the hole or outside). */
+.ring-shimmer {
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 1;
+  background:
+    linear-gradient(115deg, transparent 18%, rgba(255, 255, 255, 0.34) 38%, rgba(167, 139, 250, 0.28) 48%, rgba(56, 189, 248, 0.18) 58%, transparent 78%);
+  background-size: 260% 260%;
+  background-position: 220% 50%;
+  -webkit-mask: radial-gradient(circle, transparent 0 88px, #000 90px 100%);
+  mask: radial-gradient(circle, transparent 0 88px, #000 90px 100%);
+  animation: shimmerSweep 7s ease-in-out infinite;
+}
+
+@keyframes shimmerSweep {
+  0%, 100% { background-position: 220% 50%; opacity: 0.75; }
+  50%      { background-position: -60% 50%; opacity: 1; }
+}
+
+/* === Ring segments: one ring divided into equal chunks === */
+#ring-segments {
+  position: absolute;
+  inset: 0;
+  width: 280px;
+  height: 280px;
+  overflow: visible;
+}
+
+.ring-seg {
+  cursor: pointer;
+}
+
+/* Segments are ONLY hittable while the menu is open. When closed, the menu
+   stays parked over the launcher (scaled down, invisible) — if its segments
+   kept pointer-events they would silently eat clicks meant for the launcher. */
+#radial-menu.open .ring-seg {
+  pointer-events: all;
+}
+#radial-menu:not(.open) .ring-seg {
+  pointer-events: none;
+}
+
+.ring-seg path {
+  /* Fill comes from the per-action <linearGradient> url() built in JS
+     (Chromium can't take a gradient via CSS in SVG fill). CSS only handles
+     stroke + the hover pop/glow below. */
+  stroke: rgba(255, 255, 255, 0.45);
+  stroke-width: 1.2;
+  transition: fill 0.2s ease, stroke 0.2s ease, filter 0.2s ease;
+  filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.25));
+}
+
+.ring-seg .seg-icon {
+  fill: #ffffff;
+  font-size: 24px;
+  text-anchor: middle;
+  dominant-baseline: central;
+  pointer-events: none;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.7));
+  transition: filter 0.2s ease;
+}
+
+/* Glass button behind each emoji — the icon sits dead-centre of this, so
+   even if the glyph's own metrics drift, the button reads as the target. */
+.ring-seg .seg-btn {
+  /* fill comes from the url(#seg-grad-btn-<action>) gradient built in JS */
+  stroke: rgba(255, 255, 255, 0.6);
+  stroke-width: 1.3;
+  transform-box: fill-box;
+  transform-origin: center;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.42)) drop-shadow(0 0 10px var(--glow));
+  transition: transform 0.2s cubic-bezier(0.22, 0.61, 0.36, 1), fill 0.2s ease, stroke 0.2s ease, filter 0.2s ease;
+}
+
+.ring-seg .seg-label {
+  fill: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  text-anchor: middle;
+  dominant-baseline: central;
+  pointer-events: none;
+  letter-spacing: 0.08em;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  /* Dark outline halo keeps the label readable over the glass */
+  paint-order: stroke;
+  stroke: rgba(9, 14, 27, 0.88);
+  stroke-width: 3.5px;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 0 6px var(--glow)) drop-shadow(0 1px 2px rgba(0, 0, 0, 0.65));
+}
+
+/* Per-action accent glow identity (wedge/button gradients are url() refs
+   built in renderer.js — Chromium can't take gradients in SVG fill via CSS). */
+.ring-seg[data-action="info"]       { --glow: #38bdf8; --glow-fill: rgba(56, 189, 248, 0.4); }
+.ring-seg[data-action="clipboard"]  { --glow: #2dd4bf; --glow-fill: rgba(45, 212, 191, 0.38); }
+.ring-seg[data-action="notes"]      { --glow: #fbbf24; --glow-fill: rgba(251, 191, 36, 0.38); }
+.ring-seg[data-action="tasks"]      { --glow: #34d399; --glow-fill: rgba(52, 211, 153, 0.38); }
+.ring-seg[data-action="screenshot"] { --glow: #f472b6; --glow-fill: rgba(244, 114, 182, 0.42); }
+.ring-seg[data-action="sleep"]      { --glow: #60a5fa; --glow-fill: rgba(96, 165, 250, 0.4); }
+.ring-seg[data-action="settings"]   { --glow: #94a3b8; --glow-fill: rgba(148, 163, 184, 0.38); }
+
+/* Hover: the wedge chunk pops outward + glows with its accent colour.
+   Translucent fill lets the glass backdrop shine through. */
+#radial-menu.open .ring-seg path {
+  transform-box: view-box;
+  transform-origin: 50% 50%;
+  transition: transform 0.2s cubic-bezier(0.22, 0.61, 0.36, 1), fill 0.2s ease, stroke 0.2s ease, filter 0.2s ease;
+}
+
+#radial-menu.open .ring-seg:hover path,
+#radial-menu.open .ring-seg.hovered path {
+  transform: scale(1.06);
+  fill: var(--glow-fill);
+  stroke: rgba(255, 255, 255, 0.6);
+  filter: drop-shadow(0 0 18px var(--glow)) brightness(1.2);
+}
+
+#radial-menu.open .ring-seg:hover .seg-icon,
+#radial-menu.open .ring-seg.hovered .seg-icon {
+  filter: drop-shadow(0 0 10px var(--glow)) drop-shadow(0 1px 2px rgba(0, 0, 0, 0.55));
+}
+
+#radial-menu.open .ring-seg:hover .seg-btn,
+#radial-menu.open .ring-seg.hovered .seg-btn {
+  transform: scale(1.12);
+  stroke: rgba(255, 255, 255, 0.9);
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.42)) drop-shadow(0 0 20px var(--glow)) brightness(1.15);
+}
+
+/* The action-name label slides in near the outer edge of the hovered wedge */
+#radial-menu.open .ring-seg:hover .seg-label,
+#radial-menu.open .ring-seg.hovered .seg-label {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+#radial-menu.open .ring-seg:active path,
+#radial-menu.open .ring-seg.hovered:active path {
+  transform: scale(0.97);
+  filter: brightness(0.92);
+}
+
+/* === Info Popup === */
+#info-popup {
+  position: absolute;
+  top: 52px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 260; /* above the always-visible planner (210) */
+  transition: all 0.35s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+#info-popup.popup-hidden {
+  opacity: 0;
+  transform: translateX(-50%) translateY(10px) scale(0.95);
+  pointer-events: none;
+}
+
+.popup-glass,
+.panel-glass {
+  background:
+    linear-gradient(165deg, var(--glass-sheen), var(--glass-sheen-2) 36%, var(--glass-sheen-3) 100%),
+    var(--glass-bg-deep);
+  backdrop-filter: blur(14px) saturate(1.25) brightness(1.04);
+  -webkit-backdrop-filter: blur(14px) saturate(1.25) brightness(1.04);
+  border: 1px solid var(--glass-border);
+  border-top: 1px solid var(--glass-border-bright);
+  border-radius: var(--radius);
+  padding: 20px 22px;
+  box-shadow: var(--shadow-pop);
+  width: 260px;
+  text-align: center;
+  position: relative;
+}
+
+.popup-close {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.09);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--text-dim);
+  opacity: 0.85;
+  transition: opacity 0.2s, color 0.2s, background 0.2s, border-color 0.2s, transform 0.15s, box-shadow 0.2s;
+  z-index: 2;
+}
+
+.popup-close:hover {
+  opacity: 1;
+  color: var(--text-main);
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.45);
+  box-shadow: 0 0 12px rgba(129, 140, 248, 0.4);
+  transform: scale(1.1);
+}
+
+.popup-close:active {
+  transform: scale(0.95);
+}
+
+.popup-section {
+  padding: 6px 0;
+}
+
+.popup-time {
+  font-size: 36px;
+  font-weight: 700;
+  color: var(--text-main);
+  letter-spacing: -0.02em;
+  text-shadow: 0 0 24px rgba(99, 102, 241, 0.25);
+}
+
+.popup-date {
+  font-size: 13px;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+
+.popup-divider {
+  height: 1px;
+  background: var(--glass-border);
+  margin: 12px 0;
+}
+
+.weather-section {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.weather-icon {
+  font-size: 28px;
+}
+
+.weather-temp {
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.weather-desc {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.quote-section {
+  padding-top: 4px;
+}
+
+.quote-text {
+  font-size: 14px;
+  font-style: italic;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+
+/* === Clipboard Vault === */
+#clipboard-vault {
+  position: absolute;
+  top: 52px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 260; /* above the always-visible planner (210) */
+  transition: all 0.35s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+#clipboard-vault.popup-hidden {
+  opacity: 0;
+  transform: translateX(-50%) translateY(10px) scale(0.95);
+  pointer-events: none;
+}
+
+.vault-glass {
+  width: 268px;
+  padding-bottom: 14px;
+}
+
+.vault-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-main);
+  margin-bottom: 10px;
+  letter-spacing: 0.02em;
+}
+
+.vault-list {
+  max-height: 170px;
+  overflow-y: auto;
+  text-align: left;
+}
+
+.vault-empty {
+  font-size: 12px;
+  color: var(--text-dim);
+  text-align: center;
+  padding: 18px 0;
+  font-style: italic;
+}
+
+.vault-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  margin-bottom: 5px;
+  background: var(--surface-panel);
+  backdrop-filter: blur(10px) saturate(1.3);
+  -webkit-backdrop-filter: blur(10px) saturate(1.3);
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  font-size: 11px;
+  color: var(--text-main);
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  transition: background 0.15s, border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+}
+
+.vault-item:hover {
+  background: rgba(99, 102, 241, 0.2);
+  border-color: rgba(148, 163, 255, 0.45);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 0 12px rgba(99, 102, 241, 0.25);
+  transform: translateX(2px);
+}
+
+.vault-text {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vault-meta {
+  font-size: 10px;
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+
+.vault-del {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  color: var(--text-dim);
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.vault-del:hover {
+  background: rgba(244, 63, 94, 0.75);
+  color: #fff;
+}
+
+.vault-clear { margin-top: 10px; }
+
+/* === Planner: Deadlines (top half) + Daily Tasks (bottom half) ===
+   Always-visible glass panel filling the top-right sidebar from the very
+   top. Click-through outside the glass — the window only becomes
+   interactive over the planner (and popups/modal while they're open). */
+#tasks-panel {
+  position: fixed;
+  inset: 0;
+  z-index: 210;
+  transition: opacity 0.35s cubic-bezier(0.22, 0.61, 0.36, 1);
+  pointer-events: none;
+}
+
+/* Only the dock's interactive pieces catch clicks, and ONLY while the dock
+   is visible - a hidden (opacity:0) glass must never swallow clicks aimed at
+   whatever is behind it. */
+#tasks-panel:not(.panel-hidden) .tasks-panel-glass { pointer-events: auto; }
+#tasks-panel.panel-hidden .tasks-panel-glass { pointer-events: none; }
+
+#tasks-panel.panel-hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* The glass dock: flush against the top of the sidebar window (right below
+   the status bar) so the planner reaches all the way up. */
+.tasks-panel-glass {
+  position: fixed;
+  top: 8px;
+  right: 8px;
+  bottom: 8px;
+  left: 8px;
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+  border-radius: 20px;
+  background:
+    linear-gradient(165deg, var(--glass-sheen), var(--glass-sheen-2) 36%, var(--glass-sheen-3) 100%),
+    var(--glass-bg-deep);
+  backdrop-filter: blur(12px) saturate(1.2) brightness(1.04);
+  -webkit-backdrop-filter: blur(12px) saturate(1.2) brightness(1.04);
+  border: 1px solid var(--glass-border);
+  border-top: 1px solid var(--glass-border-bright);
+  box-shadow: var(--shadow-pop);
+  overflow: hidden;
+  transform-origin: top right;
+  transition: transform 0.35s cubic-bezier(0.22, 0.61, 0.36, 1), opacity 0.35s ease;
+}
+
+#tasks-panel.panel-hidden .tasks-panel-glass {
+  transform: translateX(18px) scale(0.96);
+  opacity: 0;
+}
+
+.tasks-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 11px 14px 10px;
+  border-bottom: 1px solid var(--hairline);
+  flex-shrink: 0;
+}
+
+.tasks-panel-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+/* Gradient icon chip for the dock title. Explicit color so the 🎯 stays
+   visible even when the parent title uses gradient-clipped transparent text. */
+.t-icon {
+  color: var(--text-main);
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  background: linear-gradient(135deg, rgba(52, 211, 153, 0.3), rgba(139, 92, 246, 0.34));
+  border: 1px solid rgba(167, 139, 250, 0.35);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.tasks-panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Daily streak chip (🔥 N days) in the planner header — gradient ember pill */
+.streak-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: #fffbeb;
+  white-space: nowrap;
+  background: linear-gradient(135deg, rgba(251, 191, 36, 0.2), rgba(244, 63, 94, 0.16));
+  border: 1px solid rgba(251, 191, 36, 0.4);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 0 14px rgba(251, 191, 36, 0.28);
+  text-shadow: 0 0 8px rgba(251, 191, 36, 0.6);
+  transition: all 0.2s;
+}
+.streak-chip:hover {
+  transform: translateY(-1px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 0 22px rgba(251, 191, 36, 0.5);
+}
+
+/* Small square icon buttons used across the planner UI */
+.tp-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: 9px;
+  border: 1px solid var(--hairline-strong);
+  background: var(--surface-btn);
+  color: var(--text-main);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+}
+.tp-btn:hover {
+  background: var(--surface-btn-hover);
+  border-color: var(--hairline-strong);
+  transform: translateY(-1px) scale(1.08);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35), 0 0 14px rgba(99, 102, 241, 0.35);
+}
+.tp-btn:active { transform: scale(0.92); }
+.tp-btn-xs { width: 22px; height: 22px; border-radius: 7px; font-size: 13px; }
+
+/* Body: two halves split 50/50, each with its own slim scrollbar */
+.planner-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+}
+
+.planner-half {
+  flex: 1 1 50%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-panel);
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.section-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 33px;
+  padding: 8px 10px 7px;
+  border-bottom: 1px solid var(--hairline);
+  flex-shrink: 0;
+}
+
+.section-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-main);
+  white-space: nowrap;
+}
+
+.deadlines-half .section-title { color: #fda4af; }
+.daily-half .section-title { color: #6ee7b7; }
+
+/* Filter chips: Today / 3 Days / 1 Week */
+.filter-chips { display: flex; gap: 4px; flex-shrink: 0; }
+.fchip {
+  min-width: 42px;
+  text-align: center;
+  padding: 3px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--hairline-strong);
+  background: var(--surface-btn);
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.fchip:hover {
+  color: var(--text-main);
+  background: var(--surface-btn-hover);
+  border-color: var(--hairline-strong);
+  transform: translateY(-1px) scale(1.04);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+}
+.fchip.active {
+  background: linear-gradient(135deg, rgba(34, 211, 238, 0.35), rgba(139, 92, 246, 0.45));
+  border-color: rgba(167, 139, 250, 0.7);
+  color: #fff;
+  box-shadow: 0 0 10px rgba(139, 92, 246, 0.35);
+}
+
+/* Both halves scroll with the same slim glass scrollbar */
+.section-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 7px 8px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll-thumb) transparent;
+}
+.section-list::-webkit-scrollbar { width: 5px; }
+.section-list::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb);
+  border-radius: 3px;
+}
+.section-list::-webkit-scrollbar-track { background: transparent; }
+
+.section-empty {
+  font-size: 11px;
+  color: var(--text-dim);
+  text-align: center;
+  padding: 26px 12px;
+  line-height: 1.6;
+  font-style: italic;
+}
+
+/* === Add/edit modal — floats centered on the whole window, never over the
+   planner (it lives outside #tasks-panel in the DOM). === */
+.task-modal {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 400;
+  background: rgba(6, 10, 20, 0.55);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+.task-modal[hidden] { display: none; }
+
+.task-modal-glass {
+  position: relative;
+  width: min(288px, calc(100% - 24px));
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  text-align: center;
+  background:
+    linear-gradient(165deg, var(--glass-sheen), var(--glass-sheen-2) 36%, var(--glass-sheen-3) 100%),
+    var(--glass-bg-deep);
+  backdrop-filter: blur(14px) saturate(1.3) brightness(1.06);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3) brightness(1.06);
+  border: 1px solid var(--glass-border);
+  border-top: 1px solid var(--glass-border-bright);
+  border-radius: 18px;
+  padding: 18px;
+  box-shadow: var(--shadow-pop), 0 0 44px rgba(99, 102, 241, 0.32);
+}
+.task-modal-glass h3 {
+  font-size: 15px;
+  margin-bottom: 12px;
+  color: var(--text-main);
+}
+
+#im-name {
+  width: 100%;
+  padding: 9px 11px;
+  border-radius: 10px;
+  border: 1px solid var(--hairline-strong);
+  background: var(--surface-input);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  color: var(--text-main);
+  font-family: inherit;
+  font-size: 12.5px;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+#im-name::placeholder { color: var(--placeholder); }
+#im-name:focus {
+  border-color: rgba(99, 102, 241, 0.6);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.18);
+}
+
+.tm-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  text-align: left;
+  margin: 12px 0 6px;
+}
+
+/* Mini calendar picker */
+.tm-calendar {
+  background: var(--surface-btn);
+  border: 1px solid var(--hairline-strong);
+  border-radius: 12px;
+  padding: 8px;
+}
+.tm-cal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.tm-cal-title { font-size: 12px; font-weight: 700; }
+.tm-cal-nav {
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  border: 1px solid var(--hairline-strong);
+  background: var(--surface-btn);
+  color: var(--text-main);
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.tm-cal-nav:hover { background: var(--surface-btn-hover); }
+.tm-cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+.tm-cal-dow { font-size: 9px; color: var(--text-dim); padding: 2px 0; }
+.tm-cal-day {
+  aspect-ratio: 1;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-main);
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.12s, box-shadow 0.12s;
+}
+.tm-cal-day:hover { background: var(--surface-btn-hover); }
+.tm-cal-day.other { color: rgba(143, 156, 196, 0.4); }
+.tm-cal-day.today { box-shadow: inset 0 0 0 1px rgba(139, 92, 246, 0.6); }
+.tm-cal-day.selected {
+  background: linear-gradient(135deg, rgba(34, 211, 238, 0.75), rgba(139, 92, 246, 0.85));
+  color: #fff;
+  box-shadow: 0 0 10px rgba(139, 92, 246, 0.45);
+}
+
+/* Scroll-wheel time picker (hours +1, minutes +5) */
+.tm-time {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+.tm-wheel { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.tm-wheel-btn {
+  width: 56px;
+  height: 24px;
+  border-radius: 8px;
+  border: 1px solid var(--hairline-strong);
+  background: var(--surface-btn);
+  color: var(--text-main);
+  font-size: 9px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.tm-wheel-btn:hover { background: var(--surface-btn-hover); }
+.tm-wheel-list {
+  position: relative;
+  width: 56px;
+  height: 102px;
+  overflow-y: scroll;
+  scroll-snap-type: y mandatory;
+  background: var(--surface-btn);
+  border: 1px solid var(--hairline-strong);
+  border-radius: 10px;
+  /* Slim, clean grab bar instead of the chunky OS scrollbar */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(167, 139, 250, 0.5) transparent;
+  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 26px, #000 calc(100% - 26px), transparent 100%);
+  mask-image: linear-gradient(180deg, transparent 0, #000 26px, #000 calc(100% - 26px), transparent 100%);
+}
+.tm-wheel-list::-webkit-scrollbar { width: 4px; }
+.tm-wheel-list::-webkit-scrollbar-thumb {
+  background: rgba(167, 139, 250, 0.5);
+  border-radius: 4px;
+}
+.tm-wheel-list::-webkit-scrollbar-track { background: transparent; }
+.tm-wheel-list::after {
+  content: '';
+  position: absolute;
+  left: 5px;
+  right: 5px;
+  top: 50%;
+  height: 34px;
+  transform: translateY(-50%);
+  border-radius: 8px;
+  background: rgba(139, 92, 246, 0.16);
+  border: 1px solid rgba(167, 139, 250, 0.35);
+  pointer-events: none;
+}
+.tm-wheel-pad { height: 34px; flex-shrink: 0; }
+.tm-wheel-item {
+  height: 34px;
+  line-height: 34px;
+  text-align: center;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+  scroll-snap-align: center;
+  cursor: pointer;
+  transition: color 0.15s, transform 0.15s;
+}
+.tm-wheel-item.sel { color: var(--text-main); font-weight: 700; transform: scale(1.12); }
+.tm-sep { font-size: 18px; font-weight: 700; color: var(--text-dim); }
+
+/* Faint per-day dividing lines in the 3-day / 1-week task views */
+.day-divider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 2px 6px;
+  color: var(--divider-text);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.day-divider::before,
+.day-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--divider-line), transparent);
+}
+
+/* Category color accent on task cards (left border + glowing dot) */
+.item-row.has-cat { border-left: 3px solid var(--cat-color); }
+.cat-dot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--cat-color);
+  box-shadow: 0 0 6px var(--cat-color);
+}
+
+/* Daily task rows use the same compact height as deadline rows */
+
+/* === Planner rows: one compact line [check name date-time due edit delete] === */
+.item-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 7px;
+  margin-bottom: 4px;
+  background: var(--surface-row);
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s, transform 0.15s;
+}
+.item-row:hover {
+  background: var(--surface-row-strong);
+  border-color: var(--hairline-strong);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 3px 10px rgba(0, 0, 0, 0.16);
+  transform: translateY(-1px);
+}
+
+/* Round done-toggle - fills green and pops the check when completed */
+.item-check {
+  position: relative;
+  flex-shrink: 0;
+  width: 21px;
+  height: 21px;
+  border-radius: 50%;
+  border: 1.5px solid var(--check-ring);
+  background: rgba(255, 255, 255, 0.04);
+  color: transparent;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.item-check::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: linear-gradient(180deg, var(--accent-emerald), #22c55e);
+  transform: scaleY(0);
+  transform-origin: 50% 100%;
+  transition: transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.item-check:hover { border-color: var(--accent-emerald); box-shadow: 0 0 8px rgba(52, 211, 153, 0.4); }
+.item-row.done .item-check { border-color: transparent; color: #06281c; text-shadow: 0 0 4px rgba(255, 255, 255, 0.4); }
+.item-row.done .item-check::before { transform: scaleY(1); }
+
+.item-name {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.item-row.done .item-name { color: var(--text-dim); }
+/* Green strikethrough sweeps across the name when completed */
+.item-row.done .item-name::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 54%;
+  height: 1.6px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--accent-emerald), #22c55e);
+  transform: scaleX(0);
+  transform-origin: left;
+  animation: strikeLine 0.45s ease-out forwards;
+}
+@keyframes strikeLine {
+  to { transform: scaleX(1); }
+}
+
+/* Past-day rows (viewing a day that already passed): the item is shown
+   crossed out as completed — same treatment as .done, just a touch dimmer. */
+.item-row.past-day { opacity: 0.85; }
+.item-row.past-day:hover { opacity: 1; }
+
+/* Category-accented rows keep their group colour on the strike-through when
+   completed, so each task group stays identifiable (uncategorized rows keep
+   the default green strike). */
+.item-row.done.has-cat .item-name::after {
+  background: var(--cat-color);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--cat-color) 45%, transparent);
+}
+
+.item-chip {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 7px;
+  border-radius: 8px;
+  background: var(--surface-chip);
+  border: 1px solid var(--hairline);
+  color: var(--text-dim);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Compact "due" clock chip: (5m) (2h) (1d) (3d) — colored by urgency;
+   done turns green, overdue pulses red. */
+.due-chip {
+  flex-shrink: 0;
+  font-size: 9px;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 7px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  background: var(--surface-chip);
+  border: 1px solid var(--hairline);
+  color: var(--text-dim);
+}
+.due-chip.past  { background: rgba(244, 63, 94, 0.25); color: #fecdd3; border-color: rgba(244, 63, 94, 0.55); animation: markerPulse 1.6s ease-in-out infinite; }
+.due-chip.today { background: rgba(244, 63, 94, 0.18); color: #fda4af; border-color: rgba(244, 63, 94, 0.45); }
+.due-chip.close { background: rgba(251, 191, 36, 0.16); color: #fde68a; border-color: rgba(251, 191, 36, 0.4); }
+.due-chip.soon  { background: rgba(251, 146, 60, 0.16); color: #fdba74; border-color: rgba(251, 146, 60, 0.38); }
+.due-chip.done  { background: rgba(52, 211, 153, 0.18); color: #6ee7b7; border-color: rgba(52, 211, 153, 0.45); }
+@keyframes markerPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+.item-act {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 6px;
+  background: var(--surface-btn);
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 10.5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s, transform 0.15s, border-color 0.15s;
+}
+.item-act:hover { background: var(--surface-btn-hover); color: var(--text-main); transform: scale(1.12); border-color: var(--hairline-strong); box-shadow: 0 0 10px rgba(99, 102, 241, 0.3); }
+.item-act.del:hover { background: rgba(244, 63, 94, 0.35); color: #fff; border-color: rgba(244, 63, 94, 0.6); }
+
+/* === Quick Notes === */
+#notes-panel {
+  position: absolute;
+  top: 52px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 260; /* above the always-visible planner (210) */
+  transition: all 0.35s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+#notes-panel.panel-hidden {
+  opacity: 0;
+  transform: translateX(-50%) translateY(10px) scale(0.95);
+  pointer-events: none;
+}
+
+.notes-glass {
+  width: 268px;
+  text-align: left;
+  padding-bottom: 14px;
+  max-height: 262px;
+  overflow-y: auto;
+}
+
+.notes-glass h3 {
+  text-align: center;
+  font-size: 15px;
+  color: var(--text-main);
+  margin-bottom: 12px;
+}
+
+#notes-input {
+  width: 100%;
+  min-height: 56px;
+  max-height: 120px;
+  resize: vertical;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid var(--hairline-strong);
+  background: var(--surface-input);
+  backdrop-filter: blur(10px) saturate(1.3);
+  -webkit-backdrop-filter: blur(10px) saturate(1.3);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  color: var(--text-main);
+  font-family: inherit;
+  font-size: 12.5px;
+  line-height: 1.5;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+#notes-input::placeholder {
+  color: var(--placeholder);
+}
+
+#notes-input:focus {
+  border-color: rgba(99, 102, 241, 0.6);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+}
+
+/* === Shared button system === */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: none;
+  border-radius: 12px;
+  padding: 8px 15px;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+  backdrop-filter: blur(6px) saturate(1.2);
+  -webkit-backdrop-filter: blur(6px) saturate(1.2);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease,
+    color 0.15s ease, border-color 0.15s ease, filter 0.15s ease, opacity 0.15s ease;
+}
+
+.btn:active { transform: translateY(1px) scale(0.97); }
+.btn:disabled { opacity: 0.4; cursor: default; pointer-events: none; }
+
+.btn-primary {
+  background: linear-gradient(135deg, rgba(34, 211, 238, 0.92), rgba(139, 92, 246, 0.94));
+  color: #0b1020;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  box-shadow:
+    0 3px 14px rgba(99, 102, 241, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.18);
+}
+.btn-primary:hover {
+  filter: brightness(1.12) saturate(1.05);
+  box-shadow:
+    0 6px 22px rgba(99, 102, 241, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.18);
+  transform: translateY(-1px);
+}
+
+.btn-ghost {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: var(--text-main);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+.btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.34);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 4px 16px rgba(0, 0, 0, 0.25);
+  transform: translateY(-1px);
+}
+
+.btn-danger {
+  background: rgba(244, 63, 94, 0.16);
+  border: 1px solid rgba(244, 63, 94, 0.4);
+  color: #fda4af;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+.btn-danger:hover {
+  background: rgba(244, 63, 94, 0.32);
+  border-color: rgba(244, 63, 94, 0.6);
+  color: #fff;
+  box-shadow: 0 0 14px rgba(244, 63, 94, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+
+.btn-sm { padding: 5px 10px; font-size: 11.5px; border-radius: 9px; }
+.btn-block { width: 100%; margin-top: 8px; }
+
+.notes-list {
+  margin-top: 12px;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.note-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  margin-bottom: 5px;
+  background: var(--surface-panel);
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+
+.note-item:hover {
+  background: rgba(251, 191, 36, 0.12);
+  border-color: rgba(251, 191, 36, 0.35);
+}
+
+/* The note currently being edited — amber ring so it's clear which note the
+   textarea is editing (save updates it in place, never duplicates it). */
+.note-item.editing {
+  background: rgba(251, 191, 36, 0.16);
+  border-color: rgba(251, 191, 36, 0.65);
+  box-shadow: 0 0 14px rgba(251, 191, 36, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+
+.note-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 11.5px;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.note-act {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  color: var(--text-main);
+  cursor: pointer;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, transform 0.15s, border-color 0.15s;
+}
+
+.note-act:hover {
+  background: var(--surface-btn-hover);
+  transform: scale(1.1);
+}
+
+/* === Category chips in the task modal === */
+.im-cats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+  margin-top: 2px;
+}
+.cat-chip {
+  padding: 5px 10px;
+  border-radius: 9px;
+  border: 1px solid var(--hairline-strong);
+  background: var(--surface-btn);
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.cat-chip:hover { color: var(--text-main); background: var(--surface-btn-hover); border-color: var(--hairline-strong); }
+.cat-chip.colored { color: var(--cat-color); border-color: var(--cat-color); }
+.cat-chip.sel {
+  background: linear-gradient(135deg, rgba(34, 211, 238, 0.75), rgba(139, 92, 246, 0.85));
+  color: #fff;
+  border-color: rgba(167, 139, 250, 0.8);
+  box-shadow: 0 0 10px rgba(139, 92, 246, 0.4);
+}
+.cat-chip.colored.sel {
+  background: var(--cat-color);
+  color: #0b1020;
+  border-color: rgba(255, 255, 255, 0.5);
+  box-shadow: 0 0 12px var(--cat-color);
+}
+.chip-manage { border-style: dashed; opacity: 0.85; }
+
+/* === Categories sidebar (slide-in from the left) === */
+#categories-panel {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 172px;
+  z-index: 520;
+  pointer-events: none;
+  transition: transform 0.35s cubic-bezier(0.22, 0.61, 0.36, 1), opacity 0.3s ease;
+}
+#categories-panel.panel-hidden {
+  transform: translateX(-100%);
+  opacity: 0;
+}
+.cat-sidebar {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 14px 12px 12px;
+  background:
+    linear-gradient(165deg, var(--glass-sheen), var(--glass-sheen-2) 36%, var(--glass-sheen-3) 100%),
+    var(--glass-bg-deep);
+  backdrop-filter: blur(14px) saturate(1.3) brightness(1.04);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3) brightness(1.04);
+  border-right: 1px solid var(--glass-border-bright);
+  box-shadow: 12px 0 34px rgba(0, 0, 0, 0.45);
+}
+.cat-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12.5px;
+  font-weight: 800;
+  margin-bottom: 12px;
+  letter-spacing: 0.02em;
+}
+.cat-title { color: var(--text-main); }
+.cat-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+}
+.cat-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  transition: background 0.15s, border-color 0.15s;
+}
+.cat-row:hover { background: rgba(255, 255, 255, 0.1); border-color: rgba(255, 255, 255, 0.2); }
+.cat-color-input {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 50%;
+  padding: 0;
+  background: none;
+  cursor: pointer;
+  box-shadow: 0 0 8px var(--cat-color);
+}
+.cat-color-input::-webkit-color-swatch-wrapper { padding: 0; }
+.cat-color-input::-webkit-color-swatch {
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+}
+.cat-name {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  border-bottom: 1px dashed transparent;
+  outline: none;
+  color: var(--text-main);
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 1px 0;
+}
+.cat-name:focus { border-bottom-color: rgba(255, 255, 255, 0.35); }
+.cat-count {
+  flex-shrink: 0;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--text-dim);
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 1.5px 6px;
+}
+.cat-del {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.09);
+  color: var(--text-dim);
+  font-size: 10.5px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+.cat-del:hover { background: rgba(244, 63, 94, 0.35); color: #fff; border-color: rgba(244, 63, 94, 0.6); }
+.cat-empty { font-size: 11px; color: var(--text-dim); text-align: center; padding: 18px 6px; font-style: italic; }
+#categories-panel .btn-block { margin-top: 10px; }
+
+/* === Settings Panel === */
+#settings-panel {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 250;
+  transition: all 0.35s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+#settings-panel.panel-hidden {
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.9);
+  pointer-events: none;
+}
+
+.panel-glass h3 {
+  font-size: 15px;
+  margin-bottom: 14px;
+  color: var(--text-main);
+  text-align: center;
+}
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.setting-row span {
+  color: var(--text-main);
+}
+
+.setting-row input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent-violet);
+  cursor: pointer;
+}
+
+/* === Toast notifications === */
+.toast {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  background: linear-gradient(165deg, rgba(255, 255, 255, 0.08), rgba(9, 14, 27, 0.78) 40%);
+  backdrop-filter: blur(10px) saturate(1.2);
+  -webkit-backdrop-filter: blur(10px) saturate(1.2);
+  color: #eef2ff;
+  padding: 10px 18px;
+  border-radius: 14px;
+  font-size: 12px;
+  z-index: 11000;
+  opacity: 0;
+  transform: translateY(-10px);
+  transition: all 0.3s ease;
+  pointer-events: none;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+
+.toast.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Deadline-reminder toasts: amber (milestone) and red (5-min warning). */
+.toast.toast-alert {
+  border-color: rgba(251, 191, 36, 0.55);
+  background: linear-gradient(165deg, rgba(251, 191, 36, 0.18), rgba(9, 14, 27, 0.85) 45%);
+  box-shadow:
+    0 10px 34px rgba(0, 0, 0, 0.5),
+    0 0 26px rgba(251, 191, 36, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+.toast.toast-warn {
+  border-color: rgba(244, 63, 94, 0.7);
+  background: linear-gradient(165deg, rgba(244, 63, 94, 0.24), rgba(9, 14, 27, 0.88) 45%);
+  box-shadow:
+    0 10px 40px rgba(0, 0, 0, 0.55),
+    0 0 32px rgba(244, 63, 94, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.24);
+  color: #fff1f2;
+  font-weight: 700;
+}
+
+/* === Scrollbars === */
+.vault-list::-webkit-scrollbar,
+.notes-list::-webkit-scrollbar,
+.notes-glass::-webkit-scrollbar {
+  width: 6px;
+}
+
+.vault-list::-webkit-scrollbar-thumb,
+.notes-list::-webkit-scrollbar-thumb,
+.notes-glass::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 3px;
+}
+
+/* ============================================================
+   GLASSMORPHISM POLISH
+   Glass sheen + grain, refined hover / focus states, custom toggle
+   switches, and motion preferences.
+   Appended so these refinements layer on top of the core design
+   (later rules win at equal specificity). No IDs or JS-toggled
+   classes are added, renamed or removed here.
+   ============================================================ */
+
+/* --- Frosted-glass surface: top sheen + fine film grain --- */
+.popup-glass::before,
+.panel-glass::before,
+.tasks-panel-glass::before,
+.task-modal-glass::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background:
+    radial-gradient(130% 60% at 50% -12%, rgba(255, 255, 255, 0.16), transparent 58%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent 26%);
+}
+.popup-glass::after,
+.panel-glass::after,
+.tasks-panel-glass::after,
+.task-modal-glass::after,
+.cat-sidebar::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background-image: var(--noise);
+  opacity: 0.25;
+}
+
+/* --- Richer glass panels (overrides core glass fills) --- */
+.popup-glass,
+.panel-glass {
+  background:
+    linear-gradient(165deg, rgba(255, 255, 255, 0.13), rgba(255, 255, 255, 0.03) 38%, rgba(9, 14, 27, 0.62) 100%),
+    radial-gradient(120% 90% at 50% -10%, rgba(99, 102, 241, 0.10), transparent 55%),
+    var(--glass-bg-deep);
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(255, 255, 255, 0.07),
+    0 0 34px rgba(99, 102, 241, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.14);
+  border-top-color: rgba(255, 255, 255, 0.26);
+}
+
+.tasks-panel-glass {
+  background:
+    linear-gradient(165deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0.03) 36%, rgba(9, 14, 27, 0.62) 100%),
+    radial-gradient(120% 70% at 85% -10%, rgba(99, 102, 241, 0.12), transparent 55%),
+    var(--glass-bg-deep);
+  box-shadow:
+    0 14px 44px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(255, 255, 255, 0.06),
+    0 0 34px rgba(99, 102, 241, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.14);
+  border-top-color: rgba(255, 255, 255, 0.24);
+}
+
+/* Modal backdrop: soft vignette + indigo bloom instead of a flat shade */
+.task-modal {
+  background:
+    radial-gradient(120% 100% at 50% 0%, rgba(99, 102, 241, 0.12), transparent 55%),
+    rgba(6, 10, 20, 0.6);
+  backdrop-filter: blur(10px) saturate(1.2);
+  -webkit-backdrop-filter: blur(10px) saturate(1.2);
+}
+
+.task-modal-glass {
+  box-shadow:
+    var(--shadow-pop),
+    0 0 44px rgba(99, 102, 241, 0.32),
+    0 0 0 1px rgba(167, 139, 250, 0.10);
+}
+
+/* --- Planner header + section titles: gentle glow --- */
+.tasks-panel-header { background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent); }
+.tasks-panel-title { text-shadow: 0 0 16px rgba(139, 92, 246, 0.4); }
+.section-title { text-shadow: 0 0 14px rgba(139, 92, 246, 0.35); }
+.deadlines-half .section-title { text-shadow: 0 0 12px rgba(244, 114, 182, 0.3); }
+.daily-half .section-title { text-shadow: 0 0 12px rgba(52, 211, 153, 0.3); }
+
+/* --- Info popup details --- */
+/* Gradient-clipped clock text. Guarded by @supports so the time stays
+   readable (solid colour) on any engine that rejects background-clip:text. */
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  .popup-time {
+    background: linear-gradient(180deg, #ffffff, #c7d2fe 70%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    text-shadow: none;
+  }
+}
+.popup-time { filter: drop-shadow(0 0 18px rgba(99, 102, 241, 0.4)); }
+.popup-divider { background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.22), transparent); }
+
+/* --- Buttons: glossy glass finish --- */
+.btn { position: relative; overflow: hidden; }
+.btn::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0.04) 42%, transparent 55%);
+  opacity: 0.7;
+}
+.btn-primary {
+  box-shadow:
+    0 3px 14px rgba(99, 102, 241, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.2);
+}
+.btn-primary:hover {
+  filter: brightness(1.12) saturate(1.05);
+  box-shadow:
+    0 6px 24px rgba(99, 102, 241, 0.55),
+    0 0 24px rgba(34, 211, 238, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.18);
+}
+.btn-ghost { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 0 0 1px rgba(255, 255, 255, 0.04); }
+.btn-ghost:hover {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 4px 16px rgba(0, 0, 0, 0.28), 0 0 16px rgba(99, 102, 241, 0.18);
+}
+.btn-danger:hover {
+  box-shadow: 0 0 16px rgba(244, 63, 94, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+
+/* --- Filter chips + category chips --- */
+.fchip { position: relative; overflow: hidden; transition: all 0.18s var(--ease-pop); }
+.fchip:hover {
+  color: var(--text-main);
+  background: var(--surface-btn-hover);
+  border-color: var(--hairline-strong);
+  transform: translateY(-1px);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.3);
+}
+.fchip.active {
+  background: linear-gradient(135deg, rgba(34, 211, 238, 0.5), rgba(139, 92, 246, 0.6));
+  border-color: rgba(167, 139, 250, 0.8);
+  color: #fff;
+  box-shadow: 0 0 14px rgba(139, 92, 246, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+.cat-chip.sel {
+  box-shadow: 0 0 14px rgba(139, 92, 246, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+.cat-chip.colored.sel { box-shadow: 0 0 14px var(--cat-color); }
+
+/* --- Planner / list rows --- */
+.item-row:hover {
+  background: var(--surface-row-strong);
+  border-color: var(--hairline-strong);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    0 4px 14px rgba(0, 0, 0, 0.2),
+    0 0 16px rgba(99, 102, 241, 0.12);
+  transform: translateY(-1px);
+}
+.item-row.has-cat:hover {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    0 4px 14px rgba(0, 0, 0, 0.2),
+    0 0 16px var(--cat-color);
+}
+.vault-item:hover {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    0 0 14px rgba(99, 102, 241, 0.3);
+}
+.note-item:hover {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    0 0 14px rgba(251, 191, 36, 0.25);
+}
+.cat-row:hover {
+  background: var(--surface-row-strong);
+  border-color: var(--hairline-strong);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+}
+.tp-btn:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3), 0 0 12px rgba(99, 102, 241, 0.2);
+}
+.item-check { box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.25), inset 0 -1px 0 rgba(255, 255, 255, 0.06); }
+
+/* --- Custom glass toggle switches (settings) --- */
+.setting-row input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 40px;
+  height: 22px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.10);
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  position: relative;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: background 0.25s var(--ease-pop), border-color 0.25s var(--ease-pop), box-shadow 0.25s var(--ease-pop);
+}
+.setting-row input[type="checkbox"]::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #ffffff, #c7d2fe);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45), inset 0 -1px 0 rgba(99, 102, 241, 0.15);
+  transition: transform 0.28s var(--ease-pop);
+}
+.setting-row input[type="checkbox"]:checked {
+  background: linear-gradient(135deg, rgba(34, 211, 238, 0.95), rgba(139, 92, 246, 0.98));
+  border-color: rgba(167, 139, 250, 0.75);
+  box-shadow: 0 0 14px rgba(139, 92, 246, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+.setting-row input[type="checkbox"]:checked::before { transform: translateX(18px); }
+.setting-row input[type="checkbox"]:hover { border-color: rgba(255, 255, 255, 0.34); }
+
+/* --- Inputs: caret + focus bloom --- */
+input, textarea { caret-color: var(--accent-cyan); }
+#im-name:focus,
+#notes-input:focus {
+  border-color: rgba(99, 102, 241, 0.65);
+  background: var(--surface-input);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.18), 0 0 18px rgba(99, 102, 241, 0.22);
+}
+
+/* --- Calendar + misc surfaces --- */
+.tm-calendar { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 2px 10px rgba(0, 0, 0, 0.18); }
+.tm-cal-day.selected {
+  box-shadow: 0 0 12px rgba(139, 92, 246, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+/* --- Toast: soft colored halo --- */
+.toast {
+  border-color: rgba(255, 255, 255, 0.2);
+  box-shadow:
+    0 10px 34px rgba(0, 0, 0, 0.45),
+    0 0 22px rgba(99, 102, 241, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+/* --- Slim gradient scrollbars everywhere --- */
+.section-list::-webkit-scrollbar-thumb,
+.vault-list::-webkit-scrollbar-thumb,
+.notes-list::-webkit-scrollbar-thumb,
+.notes-glass::-webkit-scrollbar-thumb,
+.cat-list::-webkit-scrollbar-thumb {
+  background: rgba(167, 139, 250, 0.35);
+  border-radius: 4px;
+}
+.section-list::-webkit-scrollbar-thumb:hover,
+.vault-list::-webkit-scrollbar-thumb:hover,
+.notes-list::-webkit-scrollbar-thumb:hover,
+.notes-glass::-webkit-scrollbar-thumb:hover,
+.cat-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(167, 139, 250, 0.55);
+}
+
+/* --- Visible keyboard focus (accessibility) --- */
+.btn:focus-visible,
+.tp-btn:focus-visible,
+.fchip:focus-visible,
+.cat-chip:focus-visible,
+.popup-close:focus-visible,
+.item-act:focus-visible,
+.item-check:focus-visible,
+.tm-cal-nav:focus-visible,
+.tm-wheel-btn:focus-visible,
+.vault-item:focus-visible,
+.vault-del:focus-visible,
+.note-item:focus-visible,
+.note-act:focus-visible,
+.cat-del:focus-visible,
+.ring-seg:focus-visible {
+  outline: 2px solid rgba(139, 92, 246, 0.75);
+  outline-offset: 2px;
+}
+
+/* --- Respect reduced-motion preferences --- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ============================================================
+   LED ACCENTS
+   Brighter, more vivid UI: gradient-lit glass, glowing section
+   titles and LED-style interactive pops. Static gradients +
+   glow shadows only (no continuous repaints) so the polish
+   stays cheap — nothing here animates.
+   Appended so these rules win at equal specificity.
+   ============================================================ */
+
+/* --- LED light strip along the top edge of the planner glass --- */
+.tasks-panel-glass::before {
+  background:
+    linear-gradient(90deg, rgba(34, 211, 238, 0.9), rgba(139, 92, 246, 0.95) 30%, rgba(236, 72, 153, 0.9) 60%, rgba(52, 211, 153, 0.9));
+  -webkit-mask: linear-gradient(180deg, #000 0 3px, transparent 3px 100%);
+  mask: linear-gradient(180deg, #000 0 3px, transparent 3px 100%);
+  opacity: 0.9;
+  filter: saturate(1.25) brightness(1.2);
+}
+
+/* Same LED strip on popups, panels and the modal */
+.popup-glass::before,
+.panel-glass::before {
+  background:
+    linear-gradient(90deg, rgba(34, 211, 238, 0.85), rgba(139, 92, 246, 0.9) 30%, rgba(236, 72, 153, 0.85) 60%, rgba(52, 211, 153, 0.85));
+  -webkit-mask: linear-gradient(180deg, #000 0 3px, transparent 3px 100%);
+  mask: linear-gradient(180deg, #000 0 3px, transparent 3px 100%);
+  opacity: 0.85;
+  filter: saturate(1.2) brightness(1.15);
+}
+
+/* --- Planner glass: richer color blooms (indigo top-right, cyan bottom-left) --- */
+.tasks-panel-glass {
+  background:
+    linear-gradient(165deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0.03) 36%, rgba(9, 14, 27, 0.62) 100%),
+    radial-gradient(120% 70% at 85% -10%, rgba(99, 102, 241, 0.22), transparent 55%),
+    radial-gradient(120% 90% at 8% 108%, rgba(34, 211, 238, 0.13), transparent 55%),
+    var(--glass-bg-deep);
+}
+
+.popup-glass,
+.panel-glass {
+  background:
+    linear-gradient(165deg, rgba(255, 255, 255, 0.13), rgba(255, 255, 255, 0.03) 38%, rgba(9, 14, 27, 0.62) 100%),
+    radial-gradient(120% 90% at 50% -10%, rgba(99, 102, 241, 0.18), transparent 55%),
+    var(--glass-bg-deep);
+}
+
+/* --- Planner + popup titles: gradient text with a soft LED glow --- */
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  .tasks-panel-title {
+    background: linear-gradient(90deg, #eef2ff, #c7d2fe 55%, #a5b4fc);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    text-shadow: none;
+  }
+  .deadlines-half .section-title {
+    background: linear-gradient(90deg, #fecdd3, #fb7185 55%, #f43f5e);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    text-shadow: none;
+  }
+  .daily-half .section-title {
+    background: linear-gradient(90deg, #a7f3d0, #34d399 55%, #10b981);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    text-shadow: none;
+  }
+  .task-modal-glass h3 {
+    background: linear-gradient(90deg, #eef2ff, #c7d2fe 55%, #67e8f9);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    text-shadow: none;
+  }
+}
+.tasks-panel-title { filter: drop-shadow(0 0 10px rgba(99, 102, 241, 0.5)); }
+.deadlines-half .section-title { filter: drop-shadow(0 0 8px rgba(244, 63, 94, 0.45)); }
+.daily-half .section-title { filter: drop-shadow(0 0 8px rgba(52, 211, 153, 0.45)); }
+.task-modal-glass h3 { filter: drop-shadow(0 0 8px rgba(99, 102, 241, 0.4)); }
+
+/* --- Planner halves: subtle per-section color tint --- */
+.deadlines-half {
+  background: linear-gradient(160deg, rgba(244, 63, 94, 0.10), rgba(255, 255, 255, 0.03) 42%, rgba(255, 255, 255, 0.04));
+}
+.daily-half {
+  background: linear-gradient(160deg, rgba(52, 211, 153, 0.10), rgba(255, 255, 255, 0.03) 42%, rgba(255, 255, 255, 0.04));
+}
+
+/* --- LED-style interactive pops --- */
+.tp-btn:hover {
+  background: linear-gradient(135deg, rgba(34, 211, 238, 0.42), rgba(139, 92, 246, 0.52));
+  border-color: rgba(167, 139, 250, 0.75);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35), 0 0 18px rgba(139, 92, 246, 0.5);
+}
+
+.fchip.active {
+  background: linear-gradient(135deg, rgba(34, 211, 238, 0.85), rgba(139, 92, 246, 0.95));
+  border-color: rgba(167, 139, 250, 1);
+  box-shadow: 0 0 18px rgba(139, 92, 246, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+.item-check:hover {
+  border-color: #34d399;
+  box-shadow: 0 0 12px rgba(52, 211, 153, 0.7);
+}
+
+.tm-cal-day.selected {
+  background: linear-gradient(135deg, #22d3ee, #8b5cf6);
+  box-shadow: 0 0 14px rgba(139, 92, 246, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+.tm-wheel-list::after {
+  background: rgba(139, 92, 246, 0.26);
+  border-color: rgba(167, 139, 250, 0.6);
+}
+
+/* Deadline/task markers: slightly hotter LED glows */
+.due-chip.past, .due-chip.today { box-shadow: 0 0 12px rgba(244, 63, 94, 0.35); }
+.due-chip.soon { box-shadow: 0 0 10px rgba(251, 146, 60, 0.3); }
+.due-chip.done { box-shadow: 0 0 12px rgba(52, 211, 153, 0.4); }
+
+.day-divider { color: rgba(157, 171, 207, 0.95); }
+
+/* === Browser-only launcher button (hidden in Electron — button.html) === */
+#browser-launcher {
+  position: fixed;
+  left: 96px;
+  top: 16px;
+  z-index: 300;
+  width: 44px;
+  height: 44px;
+  border: none;
+  cursor: pointer;
+  font-size: 20px;
+  line-height: 1;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  clip-path: polygon(50% 0%, 93% 25%, 93% 75%, 50% 100%, 7% 75%, 7% 25%);
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.32), rgba(255, 255, 255, 0.05) 34%, rgba(139, 92, 246, 0.4) 55%, rgba(34, 211, 238, 0.35) 78%, rgba(9, 14, 27, 0.5)),
+    rgba(13, 19, 34, 0.85);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.45)) drop-shadow(0 0 12px rgba(139, 92, 246, 0.5));
+  transition: transform 0.2s cubic-bezier(0.22, 0.61, 0.36, 1), filter 0.2s ease;
+}
+#browser-launcher:hover {
+  transform: scale(1.1) rotate(6deg);
+  filter: drop-shadow(0 6px 16px rgba(0, 0, 0, 0.5)) drop-shadow(0 0 20px rgba(167, 139, 250, 0.85));
+}
+#browser-launcher:active { transform: scale(0.96); }
+
+/* === Sleep (Ctrl+Shift+S) & Alt+C peek: fade the app chrome off-screen ===
+   body.sleeping-all → the whole app fades away (summon back with Ctrl+Shift+S)
+   body.alt-dim      → dimmed while Alt+C is held so you can see & click through */
+body.sleeping-all .tasks-panel-glass,
+body.sleeping-all .popup-glass,
+body.sleeping-all .panel-glass,
+body.sleeping-all .cat-sidebar,
+body.sleeping-all .task-modal-glass,
+body.sleeping-all #theme-palette {
+  opacity: 0.04 !important;
+  transform: scale(0.985);
+  pointer-events: none !important;
+  transition: opacity 0.45s ease, transform 0.45s ease;
+}
+body.alt-dim .tasks-panel-glass,
+body.alt-dim .popup-glass,
+body.alt-dim .panel-glass,
+body.alt-dim .cat-sidebar,
+body.alt-dim .task-modal-glass,
+body.alt-dim #theme-palette {
+  opacity: 0.08 !important;
+  pointer-events: none !important;
+}
+
+/* === Theme system ===
+   body[data-theme=…] is set by the renderer (persisted in 'wolf-theme').
+   Light-surface themes (white, light-blue, pink, purple) use dark text and
+   dark-tinted rows; dark themes use white text and white-tinted rows. The
+   browser-preview page background follows the theme too (Electron stays
+   transparent via body.electron-mode). */
+body:not(.electron-mode)[data-theme="black"] { background: radial-gradient(120% 120% at 20% 10%, #1c1c1c 0%, #0c0c0c 45%, #000 100%); }
+body:not(.electron-mode)[data-theme="white"] { background: radial-gradient(120% 120% at 20% 10%, #ffffff 0%, #eef2f7 55%, #d9e2ef 100%); }
+body:not(.electron-mode)[data-theme="light-blue"] { background: radial-gradient(120% 120% at 20% 10%, #e8f6ff 0%, #cfe9fb 55%, #9fd4f7 100%); }
+body:not(.electron-mode)[data-theme="dark-blue"] { background: radial-gradient(120% 120% at 20% 10%, #1e3a8a 0%, #172554 55%, #0b1a3f 100%); }
+body:not(.electron-mode)[data-theme="green"] { background: radial-gradient(120% 120% at 20% 10%, #065f46 0%, #064e3b 55%, #042f22 100%); }
+body:not(.electron-mode)[data-theme="pink"] { background: radial-gradient(120% 120% at 20% 10%, #fdf2f8 0%, #fce7f3 55%, #fbcfe8 100%); }
+body:not(.electron-mode)[data-theme="purple"] { background: radial-gradient(120% 120% at 20% 10%, #f5f3ff 0%, #ede9fe 55%, #ddd6fe 100%); }
+body:not(.electron-mode)[data-theme="red"] { background: radial-gradient(120% 120% at 20% 10%, #7f1d1d 0%, #641717 55%, #450a0a 100%); }
+
+/* Light-surface family: dark text + dark-tinted rows */
+body[data-theme="white"],
+body[data-theme="light-blue"],
+body[data-theme="pink"],
+body[data-theme="purple"] {
+  --surface-row: rgba(15, 23, 42, 0.06);
+  --surface-row-strong: rgba(15, 23, 42, 0.11);
+  --surface-panel: rgba(15, 23, 42, 0.05);
+  --surface-chip: rgba(15, 23, 42, 0.09);
+  --surface-btn: rgba(15, 23, 42, 0.06);
+  --surface-btn-hover: rgba(15, 23, 42, 0.16);
+  --surface-input: rgba(255, 255, 255, 0.6);
+  --hairline: rgba(15, 23, 42, 0.10);
+  --hairline-strong: rgba(15, 23, 42, 0.22);
+  --check-ring: rgba(15, 23, 42, 0.30);
+  --scroll-thumb: rgba(15, 23, 42, 0.25);
+  --divider-text: rgba(71, 85, 105, 0.8);
+  --divider-line: rgba(15, 23, 42, 0.18);
+  --placeholder: rgba(51, 65, 85, 0.55);
+  --shadow-pop:
+    0 14px 48px rgba(15, 23, 42, 0.25),
+    0 0 0 1px rgba(255, 255, 255, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.85);
+}
+
+/* Dark-surface family: white text + white-tinted rows */
+body[data-theme="black"],
+body[data-theme="dark-blue"],
+body[data-theme="green"],
+body[data-theme="red"] {
+  --surface-row: rgba(255, 255, 255, 0.16);
+  --surface-row-strong: rgba(255, 255, 255, 0.26);
+  --surface-panel: rgba(255, 255, 255, 0.12);
+  --surface-chip: rgba(255, 255, 255, 0.20);
+  --surface-btn: rgba(255, 255, 255, 0.14);
+  --surface-btn-hover: rgba(255, 255, 255, 0.30);
+  --surface-input: rgba(255, 255, 255, 0.16);
+  --hairline: rgba(255, 255, 255, 0.14);
+  --hairline-strong: rgba(255, 255, 255, 0.26);
+  --check-ring: rgba(255, 255, 255, 0.42);
+  --scroll-thumb: rgba(255, 255, 255, 0.32);
+  --divider-text: rgba(226, 232, 240, 0.8);
+  --divider-line: rgba(255, 255, 255, 0.28);
+  --placeholder: rgba(226, 232, 240, 0.6);
+}
+
+/* Black — solid black glass */
+body[data-theme="black"] {
+  --bg-0: #000000; --bg-1: #0a0a0a; --bg-2: #141414;
+  --text-main: #f5f5f5; --text-dim: #9ca3af;
+  --glass-bg: rgba(0, 0, 0, 0.82); --glass-bg-deep: rgba(0, 0, 0, 0.92);
+  --glass-border: rgba(255, 255, 255, 0.14); --glass-border-bright: rgba(255, 255, 255, 0.28);
+  --glass-sheen: rgba(255, 255, 255, 0.09); --glass-sheen-2: rgba(255, 255, 255, 0.02); --glass-sheen-3: rgba(255, 255, 255, 0.05);
+}
+
+/* White — bright porcelain glass */
+body[data-theme="white"] {
+  --bg-0: #ffffff; --bg-1: #eef2f7; --bg-2: #d9e2ef;
+  --text-main: #0f172a; --text-dim: #475569;
+  --glass-bg: rgba(255, 255, 255, 0.82); --glass-bg-deep: rgba(255, 255, 255, 0.94);
+  --glass-border: rgba(15, 23, 42, 0.14); --glass-border-bright: rgba(255, 255, 255, 0.95);
+  --glass-sheen: rgba(255, 255, 255, 0.98); --glass-sheen-2: rgba(255, 255, 255, 0.85); --glass-sheen-3: rgba(226, 232, 240, 0.9);
+}
+
+/* Light blue */
+body[data-theme="light-blue"] {
+  --bg-0: #e8f6ff; --bg-1: #cfe9fb; --bg-2: #a8d8f6;
+  --text-main: #083344; --text-dim: #3b6f8f;
+  --glass-bg: rgba(191, 227, 254, 0.82); --glass-bg-deep: rgba(147, 197, 253, 0.88);
+  --glass-border: rgba(12, 74, 110, 0.18); --glass-border-bright: rgba(255, 255, 255, 0.9);
+  --glass-sheen: rgba(219, 234, 254, 0.95); --glass-sheen-2: rgba(147, 197, 253, 0.6); --glass-sheen-3: rgba(14, 116, 221, 0.4);
+}
+
+/* Dark blue */
+body[data-theme="dark-blue"] {
+  --bg-0: #1e3a8a; --bg-1: #172554; --bg-2: #0f1d44;
+  --text-main: #eef2ff; --text-dim: #a5b4fc;
+  --glass-bg: rgba(30, 58, 138, 0.82); --glass-bg-deep: rgba(23, 37, 84, 0.9);
+  --glass-border: rgba(199, 210, 254, 0.2); --glass-border-bright: rgba(219, 234, 254, 0.35);
+  --glass-sheen: rgba(96, 165, 250, 0.4); --glass-sheen-2: rgba(59, 130, 246, 0.22); --glass-sheen-3: rgba(15, 23, 42, 0.6);
+}
+
+/* Green */
+body[data-theme="green"] {
+  --bg-0: #065f46; --bg-1: #064e3b; --bg-2: #053b2c;
+  --text-main: #ecfdf5; --text-dim: #a7f3d0;
+  --glass-bg: rgba(16, 185, 129, 0.8); --glass-bg-deep: rgba(6, 95, 70, 0.9);
+  --glass-border: rgba(167, 243, 208, 0.22); --glass-border-bright: rgba(209, 250, 229, 0.36);
+  --glass-sheen: rgba(52, 211, 153, 0.38); --glass-sheen-2: rgba(16, 185, 129, 0.2); --glass-sheen-3: rgba(4, 60, 44, 0.6);
+}
+
+/* Pink */
+body[data-theme="pink"] {
+  --bg-0: #fdf2f8; --bg-1: #fce7f3; --bg-2: #fbcfe8;
+  --text-main: #500724; --text-dim: #7c2d51;
+  --glass-bg: rgba(251, 207, 232, 0.85); --glass-bg-deep: rgba(244, 114, 182, 0.88);
+  --glass-border: rgba(190, 24, 93, 0.18); --glass-border-bright: rgba(255, 255, 255, 0.9);
+  --glass-sheen: rgba(254, 205, 211, 0.95); --glass-sheen-2: rgba(251, 207, 232, 0.6); --glass-sheen-3: rgba(190, 24, 93, 0.45);
+}
+
+/* Purple */
+body[data-theme="purple"] {
+  --bg-0: #f5f3ff; --bg-1: #ede9fe; --bg-2: #ddd6fe;
+  --text-main: #2e1065; --text-dim: #5b4b8a;
+  --glass-bg: rgba(221, 214, 254, 0.85); --glass-bg-deep: rgba(167, 139, 250, 0.88);
+  --glass-border: rgba(76, 29, 149, 0.18); --glass-border-bright: rgba(255, 255, 255, 0.9);
+  --glass-sheen: rgba(237, 233, 254, 0.95); --glass-sheen-2: rgba(196, 181, 253, 0.6); --glass-sheen-3: rgba(76, 29, 149, 0.45);
+}
+
+/* Red */
+body[data-theme="red"] {
+  --bg-0: #7f1d1d; --bg-1: #641717; --bg-2: #4a0e0e;
+  --text-main: #fef2f2; --text-dim: #fecaca;
+  --glass-bg: rgba(185, 28, 28, 0.84); --glass-bg-deep: rgba(153, 27, 27, 0.9);
+  --glass-border: rgba(254, 202, 202, 0.2); --glass-border-bright: rgba(254, 226, 226, 0.36);
+  --glass-sheen: rgba(248, 113, 113, 0.38); --glass-sheen-2: rgba(239, 68, 68, 0.2); --glass-sheen-3: rgba(69, 10, 10, 0.6);
+}
+
+/* Section titles: the pale pink/green tints are unreadable on light glass —
+   switch the light family to deeper shades. */
+body[data-theme="white"] .deadlines-half .section-title,
+body[data-theme="light-blue"] .deadlines-half .section-title,
+body[data-theme="pink"] .deadlines-half .section-title,
+body[data-theme="purple"] .deadlines-half .section-title { color: #be185d; }
+body[data-theme="white"] .daily-half .section-title,
+body[data-theme="light-blue"] .daily-half .section-title,
+body[data-theme="pink"] .daily-half .section-title,
+body[data-theme="purple"] .daily-half .section-title { color: #047857; }
+
+/* Streak chip: the amber-on-dark styling needs a dark-text variant on light
+   glass, and the due-chips' pale text needs deepening too. */
+body[data-theme="white"] .streak-chip,
+body[data-theme="light-blue"] .streak-chip,
+body[data-theme="pink"] .streak-chip,
+body[data-theme="purple"] .streak-chip {
+  color: #78350f;
+  background: linear-gradient(135deg, rgba(251, 191, 36, 0.5), rgba(244, 63, 94, 0.3));
+  border-color: rgba(180, 83, 9, 0.45);
+  text-shadow: none;
+}
+body[data-theme="white"] .due-chip,
+body[data-theme="light-blue"] .due-chip,
+body[data-theme="pink"] .due-chip,
+body[data-theme="purple"] .due-chip { color: #475569; }
+body[data-theme="white"] .due-chip.past,
+body[data-theme="light-blue"] .due-chip.past,
+body[data-theme="pink"] .due-chip.past,
+body[data-theme="purple"] .due-chip.past { color: #9f1239; }
+body[data-theme="white"] .due-chip.today,
+body[data-theme="light-blue"] .due-chip.today,
+body[data-theme="pink"] .due-chip.today,
+body[data-theme="purple"] .due-chip.today { color: #be123c; }
+body[data-theme="white"] .due-chip.close,
+body[data-theme="light-blue"] .due-chip.close,
+body[data-theme="pink"] .due-chip.close,
+body[data-theme="purple"] .due-chip.close { color: #92400e; }
+body[data-theme="white"] .due-chip.soon,
+body[data-theme="light-blue"] .due-chip.soon,
+body[data-theme="pink"] .due-chip.soon,
+body[data-theme="purple"] .due-chip.soon { color: #c2410c; }
+body[data-theme="white"] .due-chip.done,
+body[data-theme="light-blue"] .due-chip.done,
+body[data-theme="pink"] .due-chip.done,
+body[data-theme="purple"] .due-chip.done { color: #047857; }
+
+/* === Theme palette (pops up at the bottom-left of the planner) === */
+#theme-palette {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  z-index: 230;
+  pointer-events: none;
+  transition: opacity 0.25s ease, transform 0.3s cubic-bezier(0.22, 0.61, 0.36, 1);
+  transform-origin: bottom left;
+}
+#theme-palette.palette-hidden {
+  opacity: 0;
+  transform: translateY(10px) scale(0.9);
+  pointer-events: none;
+}
+#theme-palette:not(.palette-hidden) { pointer-events: auto; }
+.palette-glass {
+  width: 212px;
+  background:
+    linear-gradient(165deg, var(--glass-sheen), var(--glass-sheen-2) 36%, var(--glass-sheen-3) 100%),
+    var(--glass-bg-deep);
+  backdrop-filter: blur(18px) saturate(1.4) brightness(1.06);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4) brightness(1.06);
+  border: 1px solid var(--glass-border);
+  border-top: 1px solid var(--glass-border-bright);
+  border-radius: 16px;
+  padding: 12px;
+  box-shadow: var(--shadow-pop), 0 0 34px rgba(139, 92, 246, 0.25);
+}
+.palette-title {
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-main);
+  margin-bottom: 10px;
+}
+.palette-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+.swatch {
+  position: relative;
+  aspect-ratio: 1;
+  border: none;
+  border-radius: 11px;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 2px 8px rgba(0, 0, 0, 0.28);
+  transition: transform 0.16s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.16s ease, outline-color 0.16s ease;
+}
+.swatch:hover {
+  transform: scale(1.14) rotate(-3deg);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+.swatch:active { transform: scale(0.95); }
+.swatch.active {
+  outline: 2px solid var(--text-main);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.55), 0 0 18px rgba(139, 92, 246, 0.6);
+}
+.swatch.active::after {
+  content: '✓';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 900;
+  color: #fff;
+  text-shadow: 0 1px 5px rgba(0, 0, 0, 0.85);
+}
+
+/* === Browser-preview launcher hover-arm (mirrors the Electron launcher's
+   ~2.5s hold-to-open progress arc) === */
+.browser-arm-ring {
+  position: fixed;
+  left: 96px;
+  top: 16px;
+  z-index: 299;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: conic-gradient(from -90deg, #22d3ee calc(var(--p, 0) * 1%), rgba(255, 255, 255, 0.12) 0);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 3px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 3px));
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+body.arming .browser-arm-ring { opacity: 1; }
+.browser-arm-timer {
+  position: fixed;
+  left: 96px;
+  top: 68px;
+  z-index: 299;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: #dbeafe;
+  background: rgba(9, 14, 27, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 999px;
+  padding: 2px 8px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+body.arming .browser-arm-timer { opacity: 1; }
+body.electron-mode .browser-arm-ring,
+body.electron-mode .browser-arm-timer { display: none !important; }
+
+/* === View mode bar (Tasks / Calendar / Week — one at a time) === */
+.view-switch {
+  display: flex;
+  gap: 5px;
+  padding: 8px 10px 7px;
+  border-bottom: 1px solid var(--hairline);
+  background: linear-gradient(180deg, var(--surface-btn), transparent);
+  flex-shrink: 0;
+}
+.vs-btn {
+  flex: 1;
+  height: 30px;
+  border: 1px solid var(--hairline);
+  border-radius: 9px;
+  background: var(--surface-btn);
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  transition: background 0.15s, color 0.15s, transform 0.15s, box-shadow 0.15s, border-color 0.15s;
+}
+.vs-btn:hover {
+  background: var(--surface-btn-hover);
+  color: var(--text-main);
+  transform: translateY(-1px);
+}
+.vs-btn.active {
+  background: linear-gradient(135deg, rgba(34, 211, 238, 0.55), rgba(139, 92, 246, 0.65));
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 2px 10px rgba(139, 92, 246, 0.4);
+}
+
+/* === Calendar view (month grid on top, selected day's items below) ===
+   Swapped in via body.view-calendar; the normal two-half layout hides. */
+body.view-calendar .planner-body { display: none; }
+body.view-week .planner-body,
+body.view-week #calendar-view { display: none; }
+#calendar-view {
+  display: none;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+}
+body.view-calendar #calendar-view { display: flex; }
+.cal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 2px;
+}
+.cal-title {
+  font-size: 12.5px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: var(--text-main);
+}
+.cal-nav {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  border: 1px solid var(--hairline-strong);
+  background: var(--surface-btn);
+  color: var(--text-main);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.15s;
+}
+.cal-nav:hover {
+  background: var(--surface-btn-hover);
+  transform: scale(1.08);
+}
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  grid-template-rows: auto;           /* weekday header keeps its own height */
+  grid-auto-rows: minmax(0, 1fr);     /* day rows share the remaining height */
+  gap: 5px;
+  /* The month grid is the calendar's main event — give it room: roughly a
+     third of the screen's height so the days don't feel cramped. */
+  height: clamp(260px, 35vh, 420px);
+  background: var(--surface-panel);
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  padding: 10px;
+}
+.cal-dow {
+  text-align: center;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  padding: 2px 0 6px;
+}
+.cal-day {
+  position: relative;
+  /* Cells stretch to fill the taller month grid (no fixed square ratio). */
+  height: 100%;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-main);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.12s, box-shadow 0.12s, transform 0.12s;
+}
+.cal-day:hover {
+  background: var(--surface-btn-hover);
+  transform: scale(1.07);
+}
+.cal-day.other { color: var(--text-dim); opacity: 0.45; }
+.cal-day.today { box-shadow: inset 0 0 0 1.5px var(--accent-cyan); }
+.cal-day.sel {
+  background: linear-gradient(135deg, rgba(34, 211, 238, 0.8), rgba(139, 92, 246, 0.9));
+  color: #fff;
+  box-shadow: 0 0 12px rgba(139, 92, 246, 0.5);
+}
+.cal-dots {
+  position: absolute;
+  bottom: 5px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 3px;
+}
+.cal-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.cal-dot.dot-dl { background: #f87171; box-shadow: 0 0 5px rgba(248, 113, 113, 0.85); }
+.cal-dot.dot-tk { background: #34d399; box-shadow: 0 0 5px rgba(52, 211, 153, 0.85); }
+/* Days before today read as completed history: dimmed, no dots, still
+   clickable so you can flip through past days. */
+.cal-day.past { opacity: 0.55; }
+.cal-day.past.sel { opacity: 1; }
+.cal-day-items {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--surface-panel);
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  padding: 8px;
+  overflow: hidden;
+}
+.cal-day-title {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  color: var(--text-main);
+  flex-shrink: 0;
+}
+.cal-day-title.past { color: var(--text-dim); font-style: italic; }
+.cal-day-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 2px 2px 6px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll-thumb) transparent;
+}
+.cal-day-list::-webkit-scrollbar { width: 5px; }
+.cal-day-list::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb);
+  border-radius: 3px;
+}
+.cal-empty {
+  font-size: 11px;
+  color: var(--text-dim);
+  text-align: center;
+  padding: 24px 10px;
+  font-style: italic;
+}

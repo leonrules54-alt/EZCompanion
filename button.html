@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>EZCompanion Launcher</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100vw; height: 100vh;
+    background: transparent;
+    overflow: hidden;
+    font-family: 'Comfortaa', 'Segoe UI', system-ui, sans-serif;
+    user-select: none;
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* === Unique launcher button: a hexagonal glass gem with a spinning neon
+     halo. Sits dead-centre of this tiny window (the window is sized to fit
+     the open ring menu around it). === */
+  #launcher-wrap {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 72px;
+    height: 72px;
+    z-index: 5;
+    cursor: pointer;
+  }
+
+  /* Hover-arm progress arc: a conic ring around the gem that fills as the
+     cursor rests on the button (~2.5s to open the menu). Turns into a
+     spinning rainbow once armed. */
+  #arm-ring {
+    position: absolute;
+    inset: -14px;
+    border-radius: 50%;
+    background: conic-gradient(from -90deg, #22d3ee calc(var(--p, 0) * 1%), rgba(255, 255, 255, 0.10) 0);
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 4px));
+    mask: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 4px));
+    opacity: 0;
+    pointer-events: none;
+    z-index: 6;
+    transition: opacity 0.25s ease;
+  }
+  body.arming #arm-ring {
+    opacity: 1;
+    filter: drop-shadow(0 0 6px rgba(34, 211, 238, 0.8));
+  }
+  body.armed #arm-ring {
+    opacity: 1;
+    background: conic-gradient(from -90deg, #34d399, #22d3ee, #8b5cf6, #f472b6, #34d399);
+    animation: haloSpin 2s linear infinite;
+    filter: drop-shadow(0 0 10px rgba(52, 211, 153, 0.9));
+  }
+  /* Countdown label under the gem while arming */
+  #arm-timer {
+    position: absolute;
+    left: 50%;
+    bottom: -30px;
+    transform: translateX(-50%);
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    color: #dbeafe;
+    background: rgba(9, 14, 27, 0.72);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 999px;
+    padding: 3px 10px;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 7;
+    transition: opacity 0.2s ease;
+  }
+  body.arming #arm-timer { opacity: 1; }
+
+  /* Conic rainbow halo that slowly spins behind the hexagon */
+  #launcher-wrap::before {
+    content: '';
+    position: absolute;
+    inset: -9px;
+    border-radius: 50%;
+    background: conic-gradient(
+      from 0deg, #6366f1, #38bdf8, #22d3ee, #34d399, #fbbf24, #f472b6, #ec4899, #a78bfa, #6366f1);
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
+    mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
+    filter: drop-shadow(0 0 6px rgba(139, 92, 246, 0.8));
+    animation: haloSpin 7s linear infinite;
+    opacity: 0.9;
+  }
+  /* Soft ambient bloom around the button */
+  #launcher-wrap::after {
+    content: '';
+    position: absolute;
+    inset: -22px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(139, 92, 246, 0.35), rgba(34, 211, 238, 0.12) 45%, transparent 70%);
+    animation: bloomPulse 2.6s ease-in-out infinite;
+    pointer-events: none;
+  }
+
+  #launcher {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    clip-path: polygon(50% 0%, 93% 25%, 93% 75%, 50% 100%, 7% 75%, 7% 25%);
+    background:
+      linear-gradient(160deg, rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0.06) 34%, rgba(139, 92, 246, 0.34) 55%, rgba(34, 211, 238, 0.3) 78%, rgba(9, 14, 27, 0.5)),
+      rgba(13, 19, 34, 0.85);
+    backdrop-filter: blur(10px) saturate(1.4) brightness(1.1);
+    -webkit-backdrop-filter: blur(10px) saturate(1.4) brightness(1.1);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.5),
+      inset 0 -2px 6px rgba(0, 0, 0, 0.35);
+    filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.5)) drop-shadow(0 0 14px rgba(139, 92, 246, 0.5));
+    transition: filter 0.25s ease, transform 0.25s cubic-bezier(0.22, 0.61, 0.36, 1);
+  }
+  #launcher .glyph {
+    font-size: 26px;
+    line-height: 1;
+    filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.8));
+    transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  /* Hovered (cursor resting on the button): the gem swells, the halo spins
+     faster and the glyph pops — inviting the ring to open. */
+  body.hover #launcher {
+    filter: drop-shadow(0 6px 18px rgba(0, 0, 0, 0.55)) drop-shadow(0 0 22px rgba(167, 139, 250, 0.85));
+    transform: scale(1.1);
+  }
+  body.hover #launcher-wrap::before {
+    animation-duration: 2.4s;
+    opacity: 1;
+  }
+  body.hover #launcher .glyph { transform: scale(1.18) rotate(18deg); }
+
+  /* === Radial ring menu (opens around the launcher on hover) === */
+  #ring {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 280px;
+    height: 280px;
+    z-index: 10;
+    pointer-events: none;
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.3);
+    transition: opacity 0.3s ease, transform 0.4s cubic-bezier(0.22, 0.61, 0.36, 1);
+  }
+  #ring.open {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(0.72); /* ~202px — fits the bigger window */
+  }
+  #ring.open .ring-seg { pointer-events: all; }
+
+  /* Glass annulus backdrop (hole in the middle so the button shows through) */
+  .ring-glass {
+    position: absolute;
+    inset: 3px;
+    border-radius: 50%;
+    background:
+      linear-gradient(165deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0.05) 38%, rgba(99, 102, 241, 0.10) 80%),
+      linear-gradient(135deg, rgba(139, 92, 246, 0.32), rgba(56, 189, 248, 0.16) 34%, rgba(236, 72, 153, 0.20) 68%, rgba(52, 211, 153, 0.14)),
+      radial-gradient(circle at 32% 26%, rgba(167, 139, 250, 0.5), rgba(20, 28, 54, 0.55) 62%),
+      rgba(9, 14, 27, 0.5);
+    backdrop-filter: blur(16px) saturate(1.5) brightness(1.08);
+    -webkit-backdrop-filter: blur(16px) saturate(1.5) brightness(1.08);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    box-shadow:
+      0 14px 52px rgba(0, 0, 0, 0.55),
+      0 0 140px rgba(139, 92, 246, 0.4),
+      inset 0 1px 0 rgba(255, 255, 255, 0.38),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.3);
+    -webkit-mask: radial-gradient(circle, transparent 0 88px, #000 90px 100%);
+    mask: radial-gradient(circle, transparent 0 88px, #000 90px 100%);
+    pointer-events: none;
+  }
+  /* Conic neon border */
+  .ring-glass::before {
+    content: '';
+    position: absolute;
+    inset: -4px;
+    border-radius: 50%;
+    background: conic-gradient(
+      from 0deg,
+      rgba(99, 102, 241, 1) 0%, rgba(56, 189, 248, 1) 12.5%, rgba(34, 211, 238, 1) 25%,
+      rgba(52, 211, 153, 1) 37.5%, rgba(250, 204, 21, 1) 50%, rgba(244, 114, 182, 1) 62.5%,
+      rgba(236, 72, 153, 1) 75%, rgba(167, 139, 250, 1) 87.5%, rgba(99, 102, 241, 1) 100%);
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 6px), #000 calc(100% - 4px));
+    mask: radial-gradient(farthest-side, transparent calc(100% - 6px), #000 calc(100% - 4px));
+    animation: ringSpin 12s linear infinite;
+    opacity: 0.9;
+    pointer-events: none;
+  }
+  @keyframes ringSpin { to { transform: rotate(360deg); } }
+  @keyframes haloSpin { to { transform: rotate(360deg); } }
+  @keyframes bloomPulse {
+    0%, 100% { transform: scale(0.94); opacity: 0.7; }
+    50% { transform: scale(1.08); opacity: 1; }
+  }
+
+  /* Ring segments */
+  #ring-segments {
+    position: absolute;
+    inset: 0;
+    width: 280px;
+    height: 280px;
+    overflow: visible;
+  }
+  .ring-seg { cursor: pointer; }
+  #ring:not(.open) .ring-seg { pointer-events: none; }
+  .ring-seg path {
+    stroke: rgba(255, 255, 255, 0.45);
+    stroke-width: 1.2;
+    transition: fill 0.2s ease, stroke 0.2s ease, filter 0.2s ease;
+    filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.25));
+  }
+  .ring-seg .seg-icon {
+    fill: #ffffff;
+    font-size: 24px;
+    text-anchor: middle;
+    dominant-baseline: central;
+    pointer-events: none;
+    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.7));
+    transition: filter 0.2s ease;
+  }
+  .ring-seg .seg-btn {
+    stroke: rgba(255, 255, 255, 0.6);
+    stroke-width: 1.3;
+    transform-box: fill-box;
+    transform-origin: center;
+    filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.42)) drop-shadow(0 0 10px var(--glow));
+    transition: fill 0.2s ease, stroke 0.2s ease, filter 0.2s ease;
+  }
+  /* Per-action accent glow */
+  .ring-seg[data-action="info"]       { --glow: #38bdf8; --glow-fill: rgba(56, 189, 248, 0.4); }
+  .ring-seg[data-action="clipboard"]  { --glow: #2dd4bf; --glow-fill: rgba(45, 212, 191, 0.38); }
+  .ring-seg[data-action="notes"]      { --glow: #fbbf24; --glow-fill: rgba(251, 191, 36, 0.38); }
+  .ring-seg[data-action="tasks"]      { --glow: #34d399; --glow-fill: rgba(52, 211, 153, 0.38); }
+  .ring-seg[data-action="calendar"]   { --glow: #f97316; --glow-fill: rgba(249, 115, 22, 0.4); }
+  .ring-seg[data-action="week"]       { --glow: #818cf8; --glow-fill: rgba(129, 140, 248, 0.4); }
+  .ring-seg[data-action="screenshot"] { --glow: #f472b6; --glow-fill: rgba(244, 114, 182, 0.42); }
+  .ring-seg[data-action="settings"]   { --glow: #94a3b8; --glow-fill: rgba(148, 163, 184, 0.38); }
+
+  /* Hover: the wedge glows with its accent (no pop-out — stays stable
+     under the cursor). */
+  .ring-seg:hover path {
+    fill: var(--glow-fill);
+    stroke: rgba(255, 255, 255, 0.7);
+    filter: drop-shadow(0 0 18px var(--glow)) brightness(1.2);
+  }
+  .ring-seg:hover .seg-icon {
+    filter: drop-shadow(0 0 10px var(--glow)) drop-shadow(0 1px 2px rgba(0, 0, 0, 0.55));
+  }
+  .ring-seg:hover .seg-btn {
+    stroke: rgba(255, 255, 255, 0.9);
+    filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.42)) drop-shadow(0 0 20px var(--glow)) brightness(1.15);
+  }
+  .ring-seg:active path { filter: brightness(0.9); }
+</style>
+</head>
+<body>
+  <div id="launcher-wrap">
+    <div id="arm-ring"></div>
+    <div id="arm-timer"></div>
+    <div id="launcher"><span class="glyph">✦</span></div>
+  </div>
+
+  <!-- Radial ring menu -->
+  <div id="ring">
+    <div class="ring-glass"></div>
+    <svg id="ring-segments" viewBox="0 0 280 280" xmlns="http://www.w3.org/2000/svg"></svg>
+  </div>
+
+  <script>
+    // Defensive shim: everything needs the preload bridge; without it the
+    // launcher stays inert (it only runs inside Electron anyway).
+    const api = window.electronAPI || {
+      openPanel() {}, openNotesPanel() {}, openScreenshotOverlay() {},
+      onButtonHover() {}, setRingOpen() {},
+    };
+
+    // === Ring menu actions — the app's feature menu ===
+    const RING_ACTIONS = [
+      { action: 'info', icon: 'ℹ️' },
+      { action: 'clipboard', icon: '📋' },
+      { action: 'notes', icon: '📝' },
+      { action: 'tasks', icon: '🎯' },
+      { action: 'calendar', icon: '📅' },
+      { action: 'week', icon: '📆' },
+      { action: 'screenshot', icon: '📷' },
+      { action: 'settings', icon: '⚙️' },
+    ];
+    const ACTION_COLORS = {
+      info: '#38bdf8', clipboard: '#2dd4bf', notes: '#fbbf24',
+      tasks: '#34d399', calendar: '#f97316', week: '#818cf8',
+      screenshot: '#f472b6', settings: '#94a3b8',
+    };
+
+    function buildRingMenu() {
+      const svg = document.getElementById('ring-segments');
+      if (!svg || svg.childNodes.length) return;
+      const NS = 'http://www.w3.org/2000/svg';
+      const CX = 140, CY = 140;
+      const R_OUT = 124, R_IN = 88;
+      const ICON_R = (R_IN + R_OUT) / 2;
+      const BTN_R = 16;
+      const N = RING_ACTIONS.length;
+      const step = 360 / N;
+      const gap = 1.4;
+      const polar = (r, a) => {
+        const rad = (a * Math.PI) / 180;
+        return [CX + r * Math.cos(rad), CY + r * Math.sin(rad)];
+      };
+
+      const defs = document.createElementNS(NS, 'defs');
+      RING_ACTIONS.forEach((item) => {
+        const c = ACTION_COLORS[item.action];
+        const mk = (id, stops) => {
+          const g = document.createElementNS(NS, 'linearGradient');
+          g.setAttribute('id', id);
+          g.setAttribute('x1', '0%'); g.setAttribute('y1', '0%');
+          g.setAttribute('x2', '100%'); g.setAttribute('y2', '100%');
+          stops.forEach(([off, col]) => {
+            const s = document.createElementNS(NS, 'stop');
+            s.setAttribute('offset', off);
+            s.setAttribute('stop-color', col);
+            g.appendChild(s);
+          });
+          defs.appendChild(g);
+        };
+        mk('seg-grad-' + item.action, [['0%', '#141e381f'], ['55%', c + '99'], ['100%', c + 'cc']]);
+        mk('seg-grad-btn-' + item.action, [['0%', c + 'd9'], ['60%', c + '66'], ['100%', '#141e3873']]);
+      });
+      svg.appendChild(defs);
+
+      RING_ACTIONS.forEach((item, i) => {
+        const a0 = i * step - 90 - step / 2 + gap / 2;
+        const a1 = (i + 1) * step - 90 - step / 2 - gap / 2;
+        const [ox0, oy0] = polar(R_OUT, a0);
+        const [ox1, oy1] = polar(R_OUT, a1);
+        const [ix0, iy0] = polar(R_IN, a0);
+        const [ix1, iy1] = polar(R_IN, a1);
+        const large = (a1 - a0) > 180 ? 1 : 0;
+        const d = `M ${ox0} ${oy0} L ${ix0} ${iy0} A ${R_IN} ${R_IN} 0 ${large} 1 ${ix1} ${iy1} L ${ox1} ${oy1} A ${R_OUT} ${R_OUT} 0 ${large} 0 ${ox0} ${oy0} Z`;
+
+        const g = document.createElementNS(NS, 'g');
+        g.setAttribute('class', 'ring-seg');
+        g.setAttribute('data-action', item.action);
+        g.setAttribute('data-icon', item.icon);
+        g.title = item.action;
+
+        const path = document.createElementNS(NS, 'path');
+        path.setAttribute('d', d);
+        path.setAttribute('fill', 'url(#seg-grad-' + item.action + ')');
+        g.appendChild(path);
+
+        const mid = i * step - 90;
+        const [tx, ty] = polar(ICON_R, mid);
+        const btn = document.createElementNS(NS, 'circle');
+        btn.setAttribute('class', 'seg-btn');
+        btn.setAttribute('cx', tx);
+        btn.setAttribute('cy', ty);
+        btn.setAttribute('r', BTN_R);
+        btn.setAttribute('fill', 'url(#seg-grad-btn-' + item.action + ')');
+        g.appendChild(btn);
+        const text = document.createElementNS(NS, 'text');
+        text.setAttribute('class', 'seg-icon');
+        text.setAttribute('x', tx);
+        text.setAttribute('y', ty);
+        text.textContent = item.icon;
+        g.appendChild(text);
+
+        svg.appendChild(g);
+      });
+    }
+
+    const ring = document.getElementById('ring');
+    function openRing() {
+      if (ring.classList.contains('open')) return;
+      ring.classList.add('open');
+      api.setRingOpen(true);
+    }
+    function closeRing() {
+      if (!ring.classList.contains('open')) return;
+      ring.classList.remove('open');
+      api.setRingOpen(false);
+    }
+
+    const armRingEl = document.getElementById('arm-ring');
+    const armTimerEl = document.getElementById('arm-timer');
+
+    // Hover handled by main.js (cursor poll): resting on the button fills
+    // the progress arc over ~2.5s; the ring opens ONLY when armed, and stays
+    // open until the cursor leaves the whole window (so sliding from the
+    // button onto a segment keeps it open).
+    api.onButtonHover((state) => {
+      document.body.classList.toggle('hover', !!(state && state.active));
+      const progress = state && typeof state.progress === 'number' ? state.progress : 0;
+      const armed = !!(state && state.armed);
+      document.body.classList.toggle('arming', progress > 0 && progress < 1 && !armed);
+      document.body.classList.toggle('armed', armed);
+      if (armRingEl) armRingEl.style.setProperty('--p', (progress * 100).toFixed(1));
+      if (armTimerEl) {
+        const remain = Math.ceil((1 - progress) * 2.5); // seconds left (BTN_ARM_MS=2500)
+        armTimerEl.textContent = (progress > 0 && progress < 1 && !armed) ? remain + 's' : '';
+      }
+      if (armed) openRing();
+      else if (state && !state.inWindow) closeRing();
+    });
+
+    // Ring segment clicks (delegated — segments are built dynamically).
+    document.getElementById('ring-segments').addEventListener('click', (e) => {
+      const seg = e.target.closest('.ring-seg');
+      if (!seg) return;
+      const action = seg.dataset.action;
+      if (!action) return;
+      closeRing();
+      switch (action) {
+        case 'notes':
+          api.openNotesPanel();
+          break;
+        case 'screenshot':
+          api.openScreenshotOverlay();
+          break;
+        default:
+          api.openPanel(action);
+      }
+    });
+
+    buildRingMenu();
+  </script>
+</body>
+</html>

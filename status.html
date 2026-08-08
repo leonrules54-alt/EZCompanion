@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<title>EZCompanion</title>
+<meta charset="UTF-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { background: transparent; overflow: hidden; }
+  body {
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    align-items: stretch;
+    font-family: 'Comfortaa', 'Segoe UI', system-ui, sans-serif;
+    user-select: none;
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+    /* Purely informational: never interactive — main.js keeps the window
+       click-through so every click passes straight to what's underneath. */
+    pointer-events: none;
+  }
+  /* Slim overlay title bar — the window is sized (in main.js) to the same
+     width and right edge as the planner sidebar, so this reads as the app's
+     own slim title strip pinned above it. */
+  #status {
+    position: relative;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 16px;
+    border-radius: 14px;
+    background:
+      linear-gradient(150deg, rgba(255, 255, 255, 0.13), rgba(255, 255, 255, 0.04) 40%, rgba(10, 14, 24, 0.45) 100%),
+      rgba(10, 14, 24, 0.88);
+    backdrop-filter: blur(12px) saturate(1.3) brightness(1.06);
+    -webkit-backdrop-filter: blur(12px) saturate(1.3) brightness(1.06);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-top: 1px solid rgba(255, 255, 255, 0.3);
+    box-shadow:
+      0 4px 24px rgba(0, 0, 0, 0.45),
+      0 0 20px rgba(99, 102, 241, 0.16),
+      inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    color: #e8edff;
+    white-space: nowrap;
+  }
+  /* Glass sheen sweeping across the bar + LED light strip along its top
+     edge (masked to the top 2px). */
+  #status::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background:
+      linear-gradient(90deg, rgba(34, 211, 238, 0.85), rgba(139, 92, 246, 0.9) 30%, rgba(236, 72, 153, 0.85) 60%, rgba(52, 211, 153, 0.85)),
+      radial-gradient(120% 80% at 18% -30%, rgba(255, 255, 255, 0.22), transparent 55%),
+      linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent 45%);
+    -webkit-mask: linear-gradient(180deg, #000 0 2px, transparent 2px 100%);
+    mask: linear-gradient(180deg, #000 0 2px, transparent 2px 100%);
+    filter: saturate(1.2) brightness(1.15);
+  }
+  /* Brand mark: gradient monogram chip + app name */
+  .brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+  .brand-mark {
+    width: 22px;
+    height: 22px;
+    border-radius: 7px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 900;
+    color: #0b1020;
+    background: linear-gradient(135deg, #22d3ee, #8b5cf6);
+    box-shadow: 0 0 12px rgba(99, 102, 241, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  }
+  .appname {
+    font-size: 12.5px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: #eef2ff;
+    text-shadow: 0 0 14px rgba(99, 102, 241, 0.35);
+  }
+  @supports (-webkit-background-clip: text) {
+    .appname {
+      background: linear-gradient(90deg, #f5f7ff, #c7d2fe 60%, #a5b4fc);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+      text-shadow: none;
+    }
+  }
+  .divider {
+    width: 1px;
+    height: 16px;
+    background: linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.22), transparent);
+    flex-shrink: 0;
+  }
+  .spacer { flex: 1; }
+  /* Live status cluster on the right */
+  .live {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+  .label {
+    font-size: 9.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    color: rgba(199, 210, 254, 0.6);
+  }
+  .dot {
+    position: relative;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #34d399;
+    box-shadow: 0 0 8px rgba(52, 211, 153, 0.95);
+    animation: pulse 2s ease-in-out infinite;
+  }
+  .dot::after {
+    content: '';
+    position: absolute;
+    inset: -4px;
+    border-radius: 50%;
+    border: 1px solid rgba(52, 211, 153, 0.5);
+    opacity: 0;
+    animation: ping 2.2s ease-out infinite;
+  }
+  #stext {
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-shadow: 0 0 12px rgba(99, 102, 241, 0.25);
+  }
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.4); opacity: 0.7; }
+  }
+  @keyframes ping {
+    0% { transform: scale(0.6); opacity: 0.8; }
+    100% { transform: scale(1.7); opacity: 0; }
+  }
+
+  /* === Follow the app theme palette (body[data-theme] set below) === */
+  /* Light-surface family: bright bar + dark text */
+  body[data-theme="white"] #status,
+  body[data-theme="light-blue"] #status,
+  body[data-theme="pink"] #status,
+  body[data-theme="purple"] #status {
+    background: linear-gradient(150deg, rgba(255, 255, 255, 0.95), rgba(248, 250, 252, 0.9) 40%, rgba(226, 232, 240, 0.92) 100%);
+    border-color: rgba(15, 23, 42, 0.16);
+    border-top-color: rgba(255, 255, 255, 0.95);
+    box-shadow: 0 4px 24px rgba(15, 23, 42, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+    color: #0f172a;
+  }
+  body[data-theme="white"] #status .appname,
+  body[data-theme="light-blue"] #status .appname,
+  body[data-theme="pink"] #status .appname,
+  body[data-theme="purple"] #status .appname { color: #0f172a; text-shadow: none; background: none; }
+  body[data-theme="white"] #status .label,
+  body[data-theme="light-blue"] #status .label,
+  body[data-theme="pink"] #status .label,
+  body[data-theme="purple"] #status .label { color: rgba(51, 65, 85, 0.8); }
+  body[data-theme="white"] #status #stext,
+  body[data-theme="light-blue"] #status #stext,
+  body[data-theme="pink"] #status #stext,
+  body[data-theme="purple"] #status #stext { color: #1e293b; text-shadow: none; }
+  body[data-theme="white"] #status .divider,
+  body[data-theme="light-blue"] #status .divider,
+  body[data-theme="pink"] #status .divider,
+  body[data-theme="purple"] #status .divider { background: linear-gradient(180deg, transparent, rgba(15, 23, 42, 0.25), transparent); }
+  /* Colored themes tint the bar's glass */
+  body[data-theme="black"] #status { background: linear-gradient(150deg, rgba(25, 25, 25, 0.92), rgba(0, 0, 0, 0.9) 100%); }
+  body[data-theme="dark-blue"] #status { background: linear-gradient(150deg, rgba(37, 99, 235, 0.9), rgba(23, 37, 84, 0.92) 100%); }
+  body[data-theme="green"] #status { background: linear-gradient(150deg, rgba(16, 185, 129, 0.9), rgba(6, 95, 70, 0.92) 100%); }
+  body[data-theme="red"] #status { background: linear-gradient(150deg, rgba(239, 68, 68, 0.9), rgba(153, 27, 27, 0.92) 100%); }
+  body[data-theme="pink"] #status { background: linear-gradient(150deg, rgba(254, 205, 211, 0.95), rgba(236, 72, 153, 0.9) 100%); }
+  body[data-theme="purple"] #status { background: linear-gradient(150deg, rgba(237, 233, 254, 0.95), rgba(139, 92, 246, 0.9) 100%); }
+  body[data-theme="light-blue"] #status { background: linear-gradient(150deg, rgba(219, 234, 254, 0.95), rgba(56, 189, 248, 0.9) 100%); }
+</style>
+<script>
+  // Follow the app's theme palette (chosen in the planner, persisted in 'wolf-theme').
+  try { document.body.dataset.theme = localStorage.getItem('wolf-theme') || ''; } catch (e) {}
+</script>
+</head>
+<body>
+<div id="status">
+  <span class="brand">
+    <span class="brand-mark">E</span>
+    <span class="appname">EZCompanion</span>
+  </span>
+  <span class="divider"></span>
+  <span class="spacer"></span>
+  <span class="live">
+    <span class="dot"></span>
+    <span class="label">Status</span>
+    <span id="stext">Active</span>
+  </span>
+</div>
+</body>
+</html>

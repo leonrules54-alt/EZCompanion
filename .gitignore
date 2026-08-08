@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Electron Forge build output
+out/
+
+# Release artifacts produced by scripts/make-installer.js
+dist/
+
+# Generated installer/app icon (build/icon.ico — created from wolf.png)
+build/
+
+# Logs / OS noise
+*.log
+.DS_Store
+Thumbs.db
+
+# Freebuff assistant runtime data (conversation state, not app code)
+.freebuff/

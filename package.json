@@ -1,0 +1,26 @@
+{
+  "name": "wolf-pet",
+  "productName": "Wolf Pet",
+  "version": "2.0.0",
+  "description": "Desktop wolf pet with mini-garden, weather popup, and productivity tools",
+  "author": "Wolf Pet",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "preview": "node server.js",
+    "electron": "electron-forge start",
+    "package": "electron-forge package",
+    "make": "electron-forge make",
+    "make:installer": "node scripts/make-installer.js",
+    "icon": "electron scripts/generate-icon.js"
+  },
+  "devDependencies": {
+    "@electron-forge/cli": "^7.11.2",
+    "@electron-forge/maker-squirrel": "^7.11.2",
+    "@electron-forge/maker-zip": "^7.11.2",
+    "electron": "^43.3.0"
+  },
+  "overrides": {
+    "yauzl": "^3.3.1"
+  }
+}

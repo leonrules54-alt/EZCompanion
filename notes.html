@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Quick Notes</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { background: transparent; overflow: hidden; }
+  body {
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    font-family: 'Comfortaa', 'Segoe UI', system-ui, sans-serif;
+    user-select: none;
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+    color: #e8edff;
+  }
+  /* The notes popup: a glass card floating LEFT of the sidebar, about half
+     its height (the window is sized/positioned in main.js). */
+  #notes-glass {
+    position: relative;
+    flex: 1;
+    margin: 8px;
+    display: flex;
+    flex-direction: column;
+    border-radius: 18px;
+    background:
+      linear-gradient(165deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.03) 36%, rgba(9, 14, 27, 0.3) 100%),
+      radial-gradient(120% 90% at 85% -10%, rgba(251, 191, 36, 0.10), transparent 55%),
+      rgba(9, 14, 27, 0.82);
+    backdrop-filter: blur(14px) saturate(1.3) brightness(1.04);
+    -webkit-backdrop-filter: blur(14px) saturate(1.3) brightness(1.04);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-top: 1px solid rgba(255, 255, 255, 0.26);
+    box-shadow:
+      0 14px 44px rgba(0, 0, 0, 0.5),
+      0 0 34px rgba(251, 191, 36, 0.12),
+      inset 0 1px 0 rgba(255, 255, 255, 0.16);
+    overflow: hidden;
+  }
+  /* LED light strip along the top edge (matches the app's planner glass) */
+  #notes-glass::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background: linear-gradient(90deg, rgba(34, 211, 238, 0.9), rgba(139, 92, 246, 0.95) 30%, rgba(236, 72, 153, 0.9) 60%, rgba(251, 191, 36, 0.9));
+    -webkit-mask: linear-gradient(180deg, #000 0 3px, transparent 3px 100%);
+    mask: linear-gradient(180deg, #000 0 3px, transparent 3px 100%);
+    opacity: 0.9;
+  }
+  /* Header */
+  .head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 13px 14px 11px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    flex-shrink: 0;
+  }
+  .head .title {
+    flex: 1;
+    font-size: 13.5px;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+  }
+  @supports (-webkit-background-clip: text) or (background-clip: text) {
+    .head .title {
+      background: linear-gradient(90deg, #fef3c7, #fbbf24 55%, #f59e0b);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+      filter: drop-shadow(0 0 8px rgba(251, 191, 36, 0.45));
+    }
+  }
+  .close {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.09);
+    color: #9dabcf;
+    font-size: 11px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
+  }
+  .close:hover {
+    background: rgba(255, 255, 255, 0.22);
+    color: #fff;
+    transform: scale(1.1);
+    border-color: rgba(255, 255, 255, 0.45);
+    box-shadow: 0 0 10px rgba(99, 102, 241, 0.35);
+  }
+  /* Body: BIG textarea up top, notes list below */
+  .body {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    padding: 10px 12px 12px;
+  }
+  #notes-input {
+    width: 100%;
+    min-height: 130px;
+    flex: 1 1 42%;
+    resize: none;
+    padding: 11px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    background: rgba(255, 255, 255, 0.07);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    color: #e8edff;
+    font-family: inherit;
+    font-size: 13px;
+    line-height: 1.55;
+    outline: none;
+    caret-color: #22d3ee;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  #notes-input:focus {
+    border-color: rgba(99, 102, 241, 0.65);
+    background: rgba(255, 255, 255, 0.1);
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.18), 0 0 18px rgba(99, 102, 241, 0.22);
+  }
+  #notes-input::placeholder { color: rgba(157, 171, 207, 0.7); }
+  #notes-save {
+    flex-shrink: 0;
+    border: none;
+    border-radius: 12px;
+    padding: 10px;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+    cursor: pointer;
+    color: #0b1020;
+    background: linear-gradient(135deg, rgba(34, 211, 238, 0.92), rgba(139, 92, 246, 0.94));
+    box-shadow: 0 3px 14px rgba(99, 102, 241, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+    transition: all 0.15s;
+  }
+  #notes-save:hover {
+    filter: brightness(1.12) saturate(1.05);
+    transform: translateY(-1px);
+    box-shadow: 0 6px 22px rgba(99, 102, 241, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  }
+  #notes-save:active { transform: scale(0.97); }
+  /* Notes list: items show up to 2 lines so you can see more at a glance */
+  .list {
+    flex: 1 1 0;
+    min-height: 0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(167, 139, 250, 0.35) transparent;
+  }
+  .list::-webkit-scrollbar { width: 5px; }
+  .list::-webkit-scrollbar-thumb { background: rgba(167, 139, 250, 0.35); border-radius: 3px; }
+  .list::-webkit-scrollbar-track { background: transparent; }
+  .note-empty {
+    font-size: 12px;
+    color: #9dabcf;
+    text-align: center;
+    padding: 22px 12px;
+    font-style: italic;
+  }
+  .note-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 9px 10px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 10px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, box-shadow 0.15s, transform 0.15s;
+  }
+  .note-item:hover {
+    background: rgba(251, 191, 36, 0.12);
+    border-color: rgba(251, 191, 36, 0.35);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 0 12px rgba(251, 191, 36, 0.18);
+    transform: translateY(-1px);
+  }
+  /* The note currently being edited — stays put until you update it (no
+     duplicate note is created when editing; save updates it in place). */
+  .note-item.editing {
+    background: rgba(251, 191, 36, 0.16);
+    border-color: rgba(251, 191, 36, 0.65);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 0 16px rgba(251, 191, 36, 0.32);
+  }
+  .note-text {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+    color: #e8edff;
+    line-height: 1.45;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    word-break: break-word;
+  }
+  .note-meta {
+    font-size: 10px;
+    color: #9dabcf;
+    flex-shrink: 0;
+    padding-top: 1px;
+  }
+  .note-acts {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+  .note-act {
+    width: 20px;
+    height: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.1);
+    color: #9dabcf;
+    cursor: pointer;
+    font-size: 10.5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, color 0.15s, transform 0.15s, border-color 0.15s;
+  }
+  .note-act:hover { background: rgba(255, 255, 255, 0.28); color: #fff; transform: scale(1.12); border-color: rgba(255, 255, 255, 0.45); }
+  .note-act.del:hover { background: rgba(244, 63, 94, 0.35); border-color: rgba(244, 63, 94, 0.6); }
+
+  /* === Follow the app theme palette (body[data-theme] set below) === */
+  /* Light-surface family: bright glass + dark text */
+  body[data-theme="white"] #notes-glass,
+  body[data-theme="light-blue"] #notes-glass,
+  body[data-theme="pink"] #notes-glass,
+  body[data-theme="purple"] #notes-glass {
+    background: linear-gradient(165deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.92) 40%, rgba(226, 232, 240, 0.95) 100%);
+    border-color: rgba(15, 23, 42, 0.16);
+    border-top-color: rgba(255, 255, 255, 0.95);
+    box-shadow: 0 14px 44px rgba(15, 23, 42, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.95);
+    color: #0f172a;
+  }
+  body[data-theme="white"] .note-text,
+  body[data-theme="light-blue"] .note-text,
+  body[data-theme="pink"] .note-text,
+  body[data-theme="purple"] .note-text { color: #0f172a; }
+  body[data-theme="white"] .note-meta,
+  body[data-theme="light-blue"] .note-meta,
+  body[data-theme="pink"] .note-meta,
+  body[data-theme="purple"] .note-meta,
+  body[data-theme="white"] .note-empty,
+  body[data-theme="light-blue"] .note-empty,
+  body[data-theme="pink"] .note-empty,
+  body[data-theme="purple"] .note-empty { color: #475569; }
+  body[data-theme="white"] #notes-input,
+  body[data-theme="light-blue"] #notes-input,
+  body[data-theme="pink"] #notes-input,
+  body[data-theme="purple"] #notes-input {
+    background: rgba(255, 255, 255, 0.75);
+    border-color: rgba(15, 23, 42, 0.18);
+    color: #0f172a;
+    caret-color: #0ea5e9;
+  }
+  body[data-theme="white"] #notes-input::placeholder,
+  body[data-theme="light-blue"] #notes-input::placeholder,
+  body[data-theme="pink"] #notes-input::placeholder,
+  body[data-theme="purple"] #notes-input::placeholder { color: rgba(71, 85, 105, 0.6); }
+  body[data-theme="white"] .close,
+  body[data-theme="light-blue"] .close,
+  body[data-theme="pink"] .close,
+  body[data-theme="purple"] .close {
+    background: rgba(15, 23, 42, 0.08);
+    border-color: rgba(15, 23, 42, 0.2);
+    color: #475569;
+  }
+  body[data-theme="white"] .note-item,
+  body[data-theme="light-blue"] .note-item,
+  body[data-theme="pink"] .note-item,
+  body[data-theme="purple"] .note-item { background: rgba(15, 23, 42, 0.05); border-color: rgba(15, 23, 42, 0.12); }
+  body[data-theme="white"] .note-act,
+  body[data-theme="light-blue"] .note-act,
+  body[data-theme="pink"] .note-act,
+  body[data-theme="purple"] .note-act { background: rgba(15, 23, 42, 0.08); border-color: rgba(15, 23, 42, 0.16); color: #475569; }
+  body[data-theme="white"] .note-act:hover,
+  body[data-theme="light-blue"] .note-act:hover,
+  body[data-theme="pink"] .note-act:hover,
+  body[data-theme="purple"] .note-act:hover { background: rgba(15, 23, 42, 0.18); color: #0f172a; }
+  /* Colored themes tint the card's glass */
+  body[data-theme="black"] #notes-glass { background: linear-gradient(165deg, rgba(25, 25, 25, 0.9), rgba(0, 0, 0, 0.93) 100%); }
+  body[data-theme="dark-blue"] #notes-glass { background: linear-gradient(165deg, rgba(37, 99, 235, 0.85), rgba(23, 37, 84, 0.9) 60%, rgba(15, 23, 42, 0.92) 100%); }
+  body[data-theme="green"] #notes-glass { background: linear-gradient(165deg, rgba(16, 185, 129, 0.85), rgba(6, 95, 70, 0.9) 60%, rgba(4, 60, 44, 0.92) 100%); }
+  body[data-theme="red"] #notes-glass { background: linear-gradient(165deg, rgba(239, 68, 68, 0.85), rgba(153, 27, 27, 0.9) 60%, rgba(69, 10, 10, 0.92) 100%); }
+  body[data-theme="pink"] #notes-glass { background: linear-gradient(165deg, rgba(254, 205, 211, 0.95), rgba(236, 72, 153, 0.85) 60%, rgba(190, 24, 93, 0.9) 100%); }
+  body[data-theme="purple"] #notes-glass { background: linear-gradient(165deg, rgba(237, 233, 254, 0.95), rgba(139, 92, 246, 0.85) 60%, rgba(76, 29, 149, 0.9) 100%); }
+  body[data-theme="light-blue"] #notes-glass { background: linear-gradient(165deg, rgba(219, 234, 254, 0.95), rgba(56, 189, 248, 0.85) 60%, rgba(14, 116, 221, 0.9) 100%); }
+</style>
+<script>
+  // Follow the app's theme palette (chosen in the planner, persisted in 'wolf-theme').
+  try { document.body.dataset.theme = localStorage.getItem('wolf-theme') || ''; } catch (e) {}
+</script>
+</head>
+<body>
+  <div id="notes-glass">
+    <div class="head">
+      <span class="title">📝 Quick Notes</span>
+      <button class="close" id="notes-close" title="Close">✕</button>
+    </div>
+    <div class="body">
+      <textarea id="notes-input" placeholder="Write a quick note…"></textarea>
+      <button id="notes-save">Save note</button>
+      <div class="list" id="notes-list"></div>
+    </div>
+  </div>
+  <script>
+    // Defensive shim: if the preload bridge is missing (plain browser), the
+    // panel still works — clipboard copy just falls back to navigator.
+    const api = window.electronAPI || {
+      writeClipboard: (t) => navigator.clipboard.writeText(t).then(() => true),
+      closeNotes() {},
+    };
+
+    // Notes are shared with the main app through localStorage (same file://
+    // origin in Electron), keyed 'wolf-notes'.
+    let notes = load();
+    function load() {
+      try { return JSON.parse(localStorage.getItem('wolf-notes')) || []; } catch (e) { return []; }
+    }
+    function save() { localStorage.setItem('wolf-notes', JSON.stringify(notes)); }
+
+    // id of the note being edited (null = composing a brand-new note).
+    let editingId = null;
+
+    const input = document.getElementById('notes-input');
+    const listEl = document.getElementById('notes-list');
+    const saveBtn = document.getElementById('notes-save');
+
+    function updateSaveLabel() {
+      saveBtn.textContent = editingId !== null ? 'Update note ✏️' : 'Save note';
+    }
+
+    function timeAgo(ts) {
+      if (!ts) return '';
+      const s = Math.floor((Date.now() - ts) / 1000);
+      if (s < 60) return 'now';
+      const m = Math.floor(s / 60);
+      if (m < 60) return m + 'm';
+      const h = Math.floor(m / 60);
+      if (h < 24) return h + 'h';
+      return Math.floor(h / 24) + 'd';
+    }
+
+    function render() {
+      listEl.innerHTML = '';
+      if (!notes.length) {
+        listEl.innerHTML = '<div class="note-empty">No notes yet — jot something down! ✍️</div>';
+        return;
+      }
+      notes.forEach((n) => {
+        const row = document.createElement('div');
+        row.className = 'note-item';
+
+        const txt = document.createElement('span');
+        txt.className = 'note-text';
+        txt.textContent = n.text;
+
+        const meta = document.createElement('span');
+        meta.className = 'note-meta';
+        meta.textContent = timeAgo(n.time);
+
+        const acts = document.createElement('span');
+        acts.className = 'note-acts';
+        const copyBtn = document.createElement('button');
+        copyBtn.className = 'note-act';
+        copyBtn.textContent = '📋';
+        copyBtn.title = 'Copy note';
+        copyBtn.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          api.writeClipboard(n.text).then(() => flash(ev.target));
+        });
+        const delBtn = document.createElement('button');
+        delBtn.className = 'note-act del';
+        delBtn.textContent = '🗑';
+        delBtn.title = 'Delete note';
+        delBtn.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          notes = notes.filter((x) => x.id !== n.id);
+          if (editingId === n.id) { editingId = null; updateSaveLabel(); }
+          save();
+          render();
+        });
+        acts.append(copyBtn, delBtn);
+
+        row.append(txt, meta, acts);
+        // Click a saved note to load it into the big textarea for editing —
+        // it stays in place and gets updated on save (never duplicated).
+        row.addEventListener('click', () => {
+          editingId = n.id;
+          input.value = n.text;
+          updateSaveLabel();
+          render(); // re-highlight the editing note
+          input.focus();
+          input.setSelectionRange(input.value.length, input.value.length);
+        });
+        if (n.id === editingId) row.classList.add('editing');
+        listEl.appendChild(row);
+      });
+    }
+
+    function flash(btn) {
+      btn.style.background = 'rgba(52, 211, 153, 0.5)';
+      btn.style.color = '#fff';
+      setTimeout(() => { btn.style.background = ''; btn.style.color = ''; }, 350);
+    }
+
+    function saveCurrentNote() {
+      const text = input.value.trim();
+      if (!text) { input.focus(); return; }
+      if (editingId !== null) {
+        // Editing: update the existing note in place (text + timestamp),
+        // keeping its position in the list — no duplicate is created.
+        const n = notes.find((x) => x.id === editingId);
+        if (n) { n.text = text; n.time = Date.now(); }
+        editingId = null;
+      } else {
+        notes.unshift({ id: Date.now(), text, time: Date.now() });
+        notes = notes.slice(0, 50);
+      }
+      save();
+      input.value = '';
+      updateSaveLabel();
+      render();
+      input.focus();
+    }
+
+    document.getElementById('notes-save').addEventListener('click', saveCurrentNote);
+    document.getElementById('notes-close').addEventListener('click', () => { if (api.closeNotes) api.closeNotes(); });
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) saveCurrentNote(); });
+
+    render();
+    // Focus the textarea once the window is actually visible — main.js shows
+    // the window after the page finishes loading, so a focus() at parse time
+    // would be dropped before the user can start typing.
+    window.addEventListener('focus', () => input.focus());
+    setTimeout(() => input.focus(), 60);
+  </script>
+</body>
+</html>
