@@ -7,6 +7,10 @@ const path = require('path');
 // the file:// protocol via loadAppFile(). This server is only useful for
 // `npm start` browser previews, or as a dev server for the renderer by
 // running Electron with WOLF_DEV_URL=http://localhost:3737.
+//
+// The root URL serves the landing page (landing.html) so the browser preview
+// matches the Vercel deployment (see vercel.json); the app dashboard stays
+// available at /index.html.
 const PORT = 3737;
 
 const mimeTypes = {
@@ -19,7 +23,10 @@ const mimeTypes = {
 };
 
 const server = http.createServer((req, res) => {
-  const rel = req.url === '/' ? '/index.html' : req.url.split('?')[0];
+  // Root (with or without a query string, e.g. /?utm_source=x) serves the
+  // landing page — matching the Vercel rewrite in vercel.json.
+  const pathname = req.url.split('?')[0];
+  const rel = pathname === '/' || pathname === '' ? '/landing.html' : pathname;
   const filePath = path.join(__dirname, rel);
 
   // Path-traversal guard: never serve files outside the project folder
