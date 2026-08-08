@@ -1,0 +1,92 @@
+name: Build & release installers
+
+# Builds the Windows installer (Squirrel .exe) and the macOS .dmg on their
+# native platforms, then uploads them to the GitHub Release for the pushed
+# tag. Triggered by pushing a version tag:
+#
+#   git tag v2.0.0 && git push origin v2.0.0
+#
+# The Release is created automatically and receives these assets (named to
+# match the landing page links):
+#   - TaskCompanion-Setup.exe   (Windows installer)
+#   - TaskCompanion.dmg         (macOS installer)
+#   - TaskCompanion-Windows.zip (portable Windows build)
+#   - TaskCompanion-macOS.zip   (portable macOS build)
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    name: Windows installer
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate app icon (.ico)
+        run: npm run icon
+
+      - name: Build Windows installers
+        run: npm run make
+
+      - name: Collect + rename artifacts
+        shell: bash
+        run: |
+          mkdir -p release
+          cp "$(find out/make -name '*Setup.exe' | head -1)" release/TaskCompanion-Setup.exe
+          cp "$(find out/make -name '*.zip' | head -1)" release/TaskCompanion-Windows.zip
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+
+  macos:
+    name: macOS installer
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # generate-icon.js writes the .ico AND the .iconset PNGs (letterboxed
+      # from wolf.png); iconutil assembles the .icns the packager needs.
+      - name: Generate app icons (.ico + .iconset -> .icns)
+        shell: bash
+        run: |
+          npm run icon
+          iconutil -c icns build/icon.iconset -o build/icon.icns
+
+      - name: Build macOS DMG + zip
+        run: npm run make
+
+      - name: Collect + rename artifacts
+        shell: bash
+        run: |
+          mkdir -p release
+          cp "$(find out/make -name '*.dmg' | head -1)" release/TaskCompanion.dmg
+          cp "$(find out/make -name '*.zip' | head -1)" release/TaskCompanion-macOS.zip
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*

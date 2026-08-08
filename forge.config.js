@@ -41,11 +41,23 @@ module.exports = {
         noMsi: true,
       },
     },
+    // macOS installer (.dmg). Can only be built ON macOS (appdmg/hdiutil),
+    // so the macOS build runs in GitHub Actions — see
+    // .github/workflows/release.yml.
+    {
+      name: '@electron-forge/maker-dmg',
+      platforms: ['darwin'],
+      config: {
+        // Volume/app name inside the DMG. The file itself is renamed to
+        // TaskCompanion.dmg by the release workflow to match the landing page.
+        name: 'WolfPet',
+      },
+    },
     // Portable zip of the unpackaged app — handy for "no install" use and
     // for any store/portable distribution later.
     {
       name: '@electron-forge/maker-zip',
-      platforms: ['win32'],
+      platforms: ['win32', 'darwin'],
     },
   ],
 };
