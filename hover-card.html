@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Hover Card</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100vw; height: 100vh;
+    background: transparent;
+    overflow: hidden;
+    font-family: 'Comfortaa', 'Segoe UI', system-ui, sans-serif;
+    user-select: none;
+    -webkit-font-smoothing: antialiased;
+  }
+  /* Glass detail card — a touch bigger than the old row hints so the full
+     name, date, time and meta are comfortably readable. */
+  #card {
+    position: absolute;
+    inset: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    padding: 13px 14px;
+    border-radius: 16px;
+    background:
+      linear-gradient(165deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.05) 38%, rgba(99, 102, 241, 0.10) 78%),
+      rgba(10, 15, 30, 0.88);
+    backdrop-filter: blur(16px) saturate(1.4) brightness(1.08);
+    -webkit-backdrop-filter: blur(16px) saturate(1.4) brightness(1.08);
+    border: 1px solid rgba(255, 255, 255, 0.28);
+    border-top: 1px solid rgba(255, 255, 255, 0.42);
+    box-shadow:
+      0 16px 48px rgba(0, 0, 0, 0.55),
+      0 0 90px rgba(139, 92, 246, 0.28),
+      inset 0 1px 0 rgba(255, 255, 255, 0.35);
+    opacity: 0;
+    transform: translateX(-6px) scale(0.97);
+    animation: pop 0.22s cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+  }
+  @keyframes pop { to { opacity: 1; transform: translateX(0) scale(1); } }
+
+  .hc-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .hc-type {
+    flex-shrink: 0;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 999px;
+  }
+  .hc-type.task { color: #d1fae5; background: rgba(52, 211, 153, 0.18); border: 1px solid rgba(52, 211, 153, 0.45); }
+  .hc-type.deadline { color: #ffe4e6; background: rgba(244, 63, 94, 0.18); border: 1px solid rgba(244, 63, 94, 0.45); }
+  .hc-done {
+    margin-left: auto;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    padding: 3px 9px;
+    border-radius: 999px;
+    color: #dcfce7;
+    background: rgba(34, 197, 94, 0.22);
+    border: 1px solid rgba(74, 222, 128, 0.5);
+  }
+  .hc-done.pending { color: #fde68a; background: rgba(245, 158, 11, 0.16); border-color: rgba(251, 191, 36, 0.45); }
+  .hc-done.overdue { color: #fecaca; background: rgba(239, 68, 68, 0.22); border-color: rgba(248, 113, 113, 0.55); }
+
+  #hc-name {
+    font-size: 16px;
+    font-weight: 800;
+    color: #f1f5f9;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+    text-shadow: 0 0 18px rgba(139, 92, 246, 0.35);
+  }
+  .hc-meta {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 5px 12px;
+    font-size: 11px;
+    color: #cbd5e1;
+  }
+  .hc-meta .k { color: #94a3b8; font-weight: 600; font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; }
+  .hc-meta .v { font-weight: 700; color: #e2e8f0; }
+
+  /* Progress bar for tasks (weighted by time) */
+  .hc-progress-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #94a3b8;
+    margin-top: 2px;
+  }
+  .hc-progress-head .pct { color: #bef264; }
+  .hc-track {
+    height: 6px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.09);
+    overflow: hidden;
+    margin-top: 4px;
+  }
+  .hc-fill {
+    height: 100%;
+    width: 0%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #a3e635, #34d399);
+    box-shadow: 0 0 12px rgba(163, 230, 53, 0.55);
+    transition: width 0.4s ease;
+  }
+</style>
+</head>
+<body>
+  <div id="card">
+    <div class="hc-head">
+      <span class="hc-type" id="hc-type">Task</span>
+      <span class="hc-done pending" id="hc-done">Pending</span>
+    </div>
+    <div id="hc-name">—</div>
+    <div class="hc-meta" id="hc-meta"></div>
+    <div id="hc-progress">
+      <div class="hc-progress-head">
+        <span>Progress</span>
+        <span class="pct" id="hc-pct">0%</span>
+      </div>
+      <div class="hc-track"><div class="hc-fill" id="hc-fill"></div></div>
+    </div>
+  </div>
+  <script>
+    const api = window.electronAPI || { onHoverCardData() {} };
+    api.onHoverCardData((d) => {
+      document.getElementById('hc-type').textContent = d.kind === 'deadline' ? 'Deadline' : 'Task';
+      document.getElementById('hc-type').className = 'hc-type ' + (d.kind === 'deadline' ? 'deadline' : 'task');
+      document.getElementById('hc-name').textContent = d.name || '—';
+
+      const done = document.getElementById('hc-done');
+      done.textContent = d.status || 'Pending';
+      done.className = 'hc-done ' + ((d.status || 'pending').toLowerCase());
+
+      const meta = document.getElementById('hc-meta');
+      meta.innerHTML = '';
+      const rows = [];
+      if (d.date) rows.push(['Date', d.date]);
+      if (d.time) rows.push(['Time', d.time]);
+      if (d.duration) rows.push(['Duration', d.duration]);
+      if (d.category) rows.push(['Category', d.category]);
+      if (!rows.length) rows.push(['Status', d.status || '—']);
+      rows.forEach(([k, v]) => {
+        const div = document.createElement('div');
+        div.innerHTML = '<div class="k">' + k + '</div><div class="v">' + v + '</div>';
+        meta.appendChild(div);
+      });
+
+      const progressEl = document.getElementById('hc-progress');
+      if (typeof d.progressPct === 'number') {
+        document.getElementById('hc-pct').textContent = Math.round(d.progressPct) + '%';
+        document.getElementById('hc-fill').style.width = Math.min(100, Math.max(0, d.progressPct)) + '%';
+        progressEl.style.display = '';
+      } else {
+        progressEl.style.display = 'none';
+      }
+    });
+  </script>
+</body>
+</html>

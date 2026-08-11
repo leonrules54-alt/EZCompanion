@@ -243,6 +243,7 @@
   .ring-seg[data-action="clipboard"]  { --glow: #2dd4bf; --glow-fill: rgba(45, 212, 191, 0.38); }
   .ring-seg[data-action="notes"]      { --glow: #fbbf24; --glow-fill: rgba(251, 191, 36, 0.38); }
   .ring-seg[data-action="tasks"]      { --glow: #34d399; --glow-fill: rgba(52, 211, 153, 0.38); }
+  .ring-seg[data-action="focus"]      { --glow: #a3e635; --glow-fill: rgba(163, 230, 53, 0.38); }
   .ring-seg[data-action="calendar"]   { --glow: #f97316; --glow-fill: rgba(249, 115, 22, 0.4); }
   .ring-seg[data-action="week"]       { --glow: #818cf8; --glow-fill: rgba(129, 140, 248, 0.4); }
   .ring-seg[data-action="screenshot"] { --glow: #f472b6; --glow-fill: rgba(244, 114, 182, 0.42); }
@@ -292,6 +293,7 @@
       { action: 'clipboard', icon: '📋' },
       { action: 'notes', icon: '📝' },
       { action: 'tasks', icon: '🎯' },
+      { action: 'focus', icon: '⏱️' },
       { action: 'calendar', icon: '📅' },
       { action: 'week', icon: '📆' },
       { action: 'screenshot', icon: '📷' },
@@ -299,7 +301,7 @@
     ];
     const ACTION_COLORS = {
       info: '#38bdf8', clipboard: '#2dd4bf', notes: '#fbbf24',
-      tasks: '#34d399', calendar: '#f97316', week: '#818cf8',
+      tasks: '#34d399', focus: '#a3e635', calendar: '#f97316', week: '#818cf8',
       screenshot: '#f472b6', settings: '#94a3b8',
     };
 

@@ -78,6 +78,23 @@
          Always visible, filling the sidebar from the very top. -->
     <div id="tasks-panel">
       <div class="tasks-panel-glass">
+        <!-- === Top strip: daily progress (always) + focus mini-bar (when a
+             session is running) — makes room at the very top as requested === -->
+        <div class="planner-top-strip" id="planner-top-strip">
+          <div class="focus-mini" id="focus-mini" hidden>
+            <span class="focus-mini-icon">⏱</span>
+            <span class="focus-mini-name" id="focus-mini-name">Focusing…</span>
+            <span class="focus-mini-time" id="focus-mini-time">25:00</span>
+          </div>
+          <div class="daily-progress" id="daily-progress">
+            <div class="daily-progress-head">
+              <span class="daily-progress-label">📈 Daily Progress</span>
+              <span class="daily-progress-pct" id="daily-progress-pct">0%</span>
+            </div>
+            <div class="daily-progress-track"><div class="daily-progress-fill" id="daily-progress-fill"></div></div>
+            <div class="daily-progress-sub"><span>Today</span><span class="daily-progress-time" id="daily-progress-time"></span></div>
+          </div>
+        </div>
         <div class="tasks-panel-header">
           <div class="tasks-panel-title">
             <span class="t-icon">🎯</span>
@@ -85,6 +102,7 @@
           </div>
           <div class="tasks-panel-actions">
             <span class="streak-chip" id="streak-chip" title="Daily streak">🔥 0</span>
+            <button class="tp-btn" id="focus-open" title="Focus timer">⏱</button>
             <button class="tp-btn" id="theme-open" title="Change theme">🎨</button>
             <button class="tp-btn" id="categories-open" title="Manage categories">🗂</button>
             <button class="tp-btn" id="tasks-hide" title="Hide planner">▁</button>
@@ -210,6 +228,36 @@
           <span>Weather display</span>
           <input type="checkbox" id="setting-weather" checked>
         </label>
+      </div>
+    </div>
+
+    <!-- === Focus Timer (pick a task, set the time, count down) === -->
+    <div id="focus-panel" class="popup-hidden">
+      <div class="popup-glass focus-glass">
+        <button class="popup-close" id="focus-close">✕</button>
+        <div class="focus-title">⏱ Focus Timer</div>
+        <div class="focus-sub">Pick a task &amp; give it your full attention</div>
+        <select id="focus-task" class="focus-select" title="Task to focus on">
+          <option value="">— Choose a task… —</option>
+        </select>
+        <div class="focus-min-row">
+          <label for="focus-minutes">Minutes</label>
+          <input type="number" id="focus-minutes" min="1" max="720" step="1" value="25" inputmode="numeric">
+        </div>
+        <div class="focus-display" id="focus-display" role="timer" aria-live="off">
+          <div class="focus-ring" id="focus-ring"></div>
+          <span class="focus-time" id="focus-time">25:00</span>
+        </div>
+        <div class="focus-task-name" id="focus-task-name"></div>
+        <div class="focus-controls">
+          <button class="btn btn-primary focus-start" id="focus-start">▶ Start</button>
+          <button class="btn btn-ghost focus-reset" id="focus-reset">↺ Reset</button>
+        </div>
+        <!-- Recent focus sessions (history of focused minutes per task) -->
+        <div class="focus-history" id="focus-history" hidden>
+          <div class="fh-head">🕘 Recent focus</div>
+          <div class="fh-list" id="focus-history-list"></div>
+        </div>
       </div>
     </div>
 

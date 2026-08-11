@@ -8,6 +8,7 @@ const vaultPanel = document.getElementById('clipboard-vault');
 const notesPanel = document.getElementById('notes-panel');
 const tasksPanel = document.getElementById('tasks-panel');
 const categoriesPanel = document.getElementById('categories-panel');
+const focusPanel = document.getElementById('focus-panel');
 
 // Popup elements
 const popupTime = document.getElementById('popup-time');
@@ -100,6 +101,7 @@ function init() {
       case 'info': toggleInfoPopup(); break;
       case 'clipboard': openClipboardVault(); break;
       case 'tasks': showPlanner(); break;
+      case 'focus': openFocusPanel(); break;
       case 'settings': openSettingsPanel(); break;
       case 'categories': openCategoriesPanel(); break;
     }
@@ -201,6 +203,8 @@ function init() {
   renderDeadlines();
   renderTasks();
   renderStreak();
+  renderDailyProgress();
+  renderFocusMini();
   // Live ticker: prunes expired deadlines + finished tasks and re-checks the
   // streak (day rollover) every minute. The lists themselves are only
   // re-rendered while the planner is visible, so a hidden planner never
@@ -211,6 +215,7 @@ function init() {
     if (!tasksPanel.classList.contains('panel-hidden')) { renderDeadlines(); renderTasks(); }
     if (appView === 'calendar') renderCalendar(); // refresh day dots
     renderStreak();
+    renderDailyProgress();
   }, 60000);
 
   // Deadline reminders: check every 30s (cheap — only iterates deadlines and
@@ -254,9 +259,19 @@ function sendInteractiveBounds() {
     !vaultPanel.classList.contains('popup-hidden') ||
     !notesPanel.classList.contains('panel-hidden') ||
     !categoriesPanel.classList.contains('panel-hidden') ||
+    !focusPanel.classList.contains('popup-hidden') ||
     !document.getElementById('theme-palette').classList.contains('palette-hidden');
   if (anyPopup) {
     bounds.push({ x: 0, y: 0, w: appRect.width, h: appRect.height });
+  }
+
+  // The mark-progress slider box must keep receiving input while open — add
+  // its rect to the interactive regions (the 400ms bounds sync keeps it
+  // live as it moves).
+  const pp = document.getElementById('progress-popover');
+  if (pp && pp.classList.contains('visible')) {
+    const r = pp.getBoundingClientRect();
+    bounds.push({ x: r.left - appRect.left, y: r.top - appRect.top, w: r.width, h: r.height });
   }
 
   window.electronAPI.updateInteractiveBounds(bounds);
@@ -308,6 +323,7 @@ app.addEventListener('click', (e) => {
   closeClipboardVault();
   closeNotesPanel();
   closeCategoriesPanel();
+  closeFocusPanel();
 });
 
 // Browser-only launcher button (hidden in Electron — button.html owns the
@@ -483,6 +499,7 @@ const RING_ACTIONS = [
   { action: 'clipboard', icon: '📋', label: 'Clipboard' },
   { action: 'notes', icon: '📝', label: 'Notes' },
   { action: 'tasks', icon: '🎯', label: 'Tasks' },
+  { action: 'focus', icon: '⏱️', label: 'Focus' },
   { action: 'calendar', icon: '📅', label: 'Calendar' },
   { action: 'week', icon: '📆', label: 'Week' },
   { action: 'screenshot', icon: '📷', label: 'Screenshot' },
@@ -493,7 +510,7 @@ const RING_ACTIONS = [
 // gradient paint servers for each wedge + glass button.
 const ACTION_COLORS = {
   info: '#38bdf8', clipboard: '#2dd4bf', notes: '#fbbf24',
-  tasks: '#34d399', calendar: '#f97316', week: '#818cf8',
+  tasks: '#34d399', focus: '#a3e635', calendar: '#f97316', week: '#818cf8',
   screenshot: '#f472b6', settings: '#94a3b8',
 };
 
@@ -626,6 +643,7 @@ function closeAllPopups() {
   vaultPanel.classList.add('popup-hidden');
   notesPanel.classList.add('panel-hidden');
   categoriesPanel.classList.add('panel-hidden');
+  focusPanel.classList.add('popup-hidden');
   closeThemePalette();
   // The ring opens above everything — the add/edit modal must not stay
   // behind its backdrop (it would cover the ring and eat its clicks).
@@ -689,6 +707,9 @@ if (ringSegments) {
         break;
       case 'tasks':
         showPlanner();
+        break;
+      case 'focus':
+        openFocusPanel();
         break;
       case 'calendar':
         setAppView('calendar');
@@ -1034,7 +1055,7 @@ function hidePlanner() {
 function loadTasks() {
   try {
     const arr = JSON.parse(localStorage.getItem('wolf-tasks')) || [];
-    return arr.map(t => Object.assign({ category: '' }, t));
+    return arr.map(t => Object.assign({ category: '', progressMin: 0 }, t));
   } catch (e) { return []; }
 }
 function saveTasks() { localStorage.setItem('wolf-tasks', JSON.stringify(tasks)); }
@@ -1076,6 +1097,7 @@ function migrateTasks() {
       durationMin: t.estimateMin || 60,
       done: !!t.done,
       completedAt: t.done ? Date.now() : undefined,
+      progressMin: 0,
     };
   });
   if (changed) saveTasks();
@@ -1215,6 +1237,7 @@ function buildDeadlineRow(dl, opts = {}) {
   const done = !!dl.done || past;
   const row = document.createElement('div');
   row.className = 'item-row' + (done ? ' done' : '') + (past ? ' past-day' : '');
+  wireRowHover(row, dl, 'deadline');
   const check = document.createElement('button');
   check.className = 'item-check';
   check.textContent = done ? '✓' : '';
@@ -1331,6 +1354,67 @@ function renderTasks() {
     }
     list.appendChild(buildTaskRow(t, { past: isPastDay(key) }));
   });
+  renderFocusTasks(); // keep the focus-timer task dropdown in sync
+  renderDailyProgress();
+  renderFocusMini();
+}
+
+// === Daily progress (very top of the planner) ===
+// A single bar over ALL of today's tasks, weighted by time: each task
+// contributes its duration, and the filled part is progressMin (capped).
+// Done tasks count as fully complete. Includes the live focus-session delta
+// so the bar visibly creeps up while a focus timer runs.
+function dailyProgress() {
+  const today = dayKey(new Date());
+  let filled = 0, total = 0;
+  tasks.forEach((t) => {
+    // Today's tasks: dated today or undated (daily). Also count tasks that
+    // were finished today even if their due day was earlier.
+    const dueIsToday = !t.due || t.due === today;
+    const completedToday = !!t.done && (t.completedAt || 0) >= todayStartMs();
+    if (!dueIsToday && !completedToday) return;
+    const dur = Math.max(1, t.durationMin || 60);
+    total += dur;
+    filled += t.done ? dur : Math.min(dur, liveProgressMin(t));
+  });
+  return total ? Math.min(1, filled / total) : 0;
+}
+
+function renderDailyProgress() {
+  const pctEl = document.getElementById('daily-progress-pct');
+  const fillEl = document.getElementById('daily-progress-fill');
+  const timeEl = document.getElementById('daily-progress-time');
+  if (!pctEl || !fillEl) return;
+  const p = dailyProgress();
+  pctEl.textContent = Math.round(p * 100) + '%';
+  fillEl.style.width = (p * 100) + '%';
+  // Sub-line: "Today · 1h 5m of 2h done"
+  if (timeEl) {
+    const today = dayKey(new Date());
+    let filled = 0, total = 0;
+    tasks.forEach((t) => {
+      const dueIsToday = !t.due || t.due === today;
+      const completedToday = !!t.done && (t.completedAt || 0) >= todayStartMs();
+      if (!dueIsToday && !completedToday) return;
+      const dur = Math.max(1, t.durationMin || 60);
+      total += dur;
+      filled += t.done ? dur : Math.min(dur, liveProgressMin(t));
+    });
+    timeEl.textContent = fmtMin(filled) + ' of ' + fmtMin(total);
+  }
+}
+
+// Live update during a focus session: only touch the focused task's bar and
+// the daily bar (no full re-render, so hover states stay intact).
+function updateLiveProgressBars() {
+  if (!focusTimer.taskId) return;
+  const task = tasks.find((t) => String(t.id) === focusTimer.taskId) || {};
+  const pct = taskProgressPct(task);
+  const fill = document.querySelector('.item-progress-fill[data-fill-task="' + focusTimer.taskId + '"]');
+  if (fill) fill.style.width = pct + '%';
+  const label = document.querySelector('.item-progress-pct[data-pct-task="' + focusTimer.taskId + '"]');
+  if (label) label.textContent = pct + '%';
+  renderDailyProgress();
 }
 
 // Faint per-day divider label for the 3-day / 1-week task views.
@@ -1353,8 +1437,46 @@ function dayLabel(key) {
   return d.toLocaleDateString([], { weekday: 'short' }) + ' ' + (d.getMonth() + 1) + '/' + d.getDate();
 }
 
-// Compact row: [check] [dot?] [name] [date · duration] [edit] [delete]
-// opts.past: the task's day has passed → crossed out as completed.
+// A task's progress in minutes: stored progressMin plus the LIVE focus-session
+// minutes (so the bar visibly fills while a focus timer runs on this task).
+function liveProgressMin(t) {
+  let m = Math.max(0, t.progressMin || 0);
+  if (
+    focusTimer && focusTimer.running &&
+    focusTimer.taskId && String(focusTimer.taskId) === String(t.id) &&
+    focusTimer.sessionStartAt
+  ) {
+    m += (Date.now() - focusTimer.sessionStartAt) / 60000;
+  }
+  return m;
+}
+
+function taskProgressPct(t) {
+  const dur = Math.max(1, t.durationMin || 60);
+  return Math.min(100, Math.round((liveProgressMin(t) / dur) * 100));
+}
+
+// Thin time-weighted progress bar under a task row's single line.
+function buildTaskProgress(t) {
+  const wrap = document.createElement('div');
+  wrap.className = 'item-progress';
+  wrap.dataset.task = String(t.id);
+  const fill = document.createElement('div');
+  fill.className = 'item-progress-fill';
+  fill.dataset.fillTask = String(t.id);
+  fill.style.width = taskProgressPct(t) + '%';
+  wrap.appendChild(fill);
+  // Tiny % readout at the right end of the line.
+  const pct = document.createElement('span');
+  pct.className = 'item-progress-pct';
+  pct.dataset.pctTask = String(t.id);
+  pct.textContent = taskProgressPct(t) + '%';
+  wrap.appendChild(pct);
+  return wrap;
+}
+
+// Compact row: [check] [dot?] [name] [date · duration] [prog?] [edit] [delete]
+// + a thin time-weighted progress bar underneath. opts.past: day passed.
 // opts.historic: read-only history row (calendar past days).
 function buildTaskRow(t, opts = {}) {
   const past = !!opts.past;
@@ -1362,12 +1484,15 @@ function buildTaskRow(t, opts = {}) {
   const done = !!t.done || past;
   const row = document.createElement('div');
   row.className = 'item-row' + (done ? ' done' : '') + (past ? ' past-day' : '');
+  if (!historic && !past) row.classList.add('prog-row');
   // Category accent: colored left border + a small glowing dot.
   const cat = categoryOf(t.category);
   if (cat) {
     row.classList.add('has-cat');
     row.style.setProperty('--cat-color', cat.color);
   }
+  const main = document.createElement('div');
+  main.className = 'item-row-main';
   const check = document.createElement('button');
   check.className = 'item-check';
   check.textContent = done ? '✓' : '';
@@ -1393,16 +1518,265 @@ function buildTaskRow(t, opts = {}) {
   }
   kids.push(name, chip);
   if (!historic) {
+    // ⊕ opens a small slider box to set how much time is done — the icon
+    // reads as "add to this task's progress", and its hover glow invites it.
+    const prog = document.createElement('button');
+    prog.className = 'item-act prog'; prog.dataset.task = String(t.id); prog.textContent = '⊕'; prog.title = 'Mark progress';
+    prog.addEventListener('click', (e) => { e.stopPropagation(); openProgressPopover(t.id); });
+    const focus = document.createElement('button');
+    focus.className = 'item-act focus'; focus.textContent = '▶'; focus.title = 'Start focus timer';
+    focus.addEventListener('click', (e) => { e.stopPropagation(); openFocusPanel(t.id); });
     const edit = document.createElement('button');
     edit.className = 'item-act'; edit.textContent = '✎'; edit.title = 'Edit task';
     edit.addEventListener('click', (e) => { e.stopPropagation(); openItemModal('task', t.id); });
     const del = document.createElement('button');
     del.className = 'item-act del'; del.textContent = '🗑'; del.title = 'Delete task';
     del.addEventListener('click', (e) => { e.stopPropagation(); deleteTask(t.id); });
-    kids.push(edit, del);
+    kids.push(prog, focus, edit, del);
   }
-  row.append(...kids);
+  main.append(...kids);
+  row.append(main);
+  // Progress bar underneath (tasks only, not historic/past rows).
+  if (!historic && !past) row.append(buildTaskProgress(t));
+  wireRowHover(row, t, 'task');
   return row;
+}
+
+// Rows scroll under the cursor inside the lists — dismiss any open hover
+// card the moment the list scrolls (the anchored position would be stale).
+['deadlines-list', 'tasks-list'].forEach((id) => {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener('scroll', () => hideHoverCard());
+});
+function hideHoverCard() {
+  if (hasElectron) window.electronAPI.hideHoverCard();
+  else hideBrowserHoverCard();
+}
+
+// === Mark-progress slider popover ===
+// Clicking a task's ▲ opens a small box beside the row: drag the slider to
+// pick how much time is done (0 → full duration), then Save commits it.
+let progressPopover = null; // { el, taskId }
+
+function buildProgressPopover() {
+  const el = document.createElement('div');
+  el.id = 'progress-popover';
+  el.innerHTML =
+    '<div class="pp-head"><span>Mark progress</span><span class="pp-value" id="pp-value">0m</span></div>' +
+    '<div class="pp-name" id="pp-name"></div>' +
+    '<input type="range" class="pp-slider" id="pp-slider" min="0" max="60" step="1" value="0">' +
+    '<div class="pp-meta"><span id="pp-min">0</span><span id="pp-max"></span></div>' +
+    '<div class="pp-btns">' +
+    '  <button class="btn btn-ghost btn-sm" id="pp-cancel">Cancel</button>' +
+    '  <button class="btn btn-primary btn-sm" id="pp-save">Save</button>' +
+    '</div>';
+  document.body.appendChild(el);
+  const slider = el.querySelector('#pp-slider');
+  const valueEl = el.querySelector('#pp-value');
+  const maxEl = el.querySelector('#pp-max');
+  const fmt = (m) => {
+    if (m < 60) return m + 'm';
+    const h = Math.floor(m / 60), r = m % 60;
+    return h + 'h' + (r ? ' ' + r + 'm' : '');
+  };
+  slider.addEventListener('input', () => {
+    valueEl.textContent = fmt(parseInt(slider.value, 10) || 0);
+  });
+  el.querySelector('#pp-cancel').addEventListener('click', (e) => {
+    e.stopPropagation();
+    hideProgressPopover();
+  });
+  el.querySelector('#pp-save').addEventListener('click', (e) => {
+    e.stopPropagation();
+    commitProgressPopover();
+  });
+  return el;
+}
+
+// Open the slider box anchored beside the task row (left edge + top, clamped
+// inside the window). Also makes the planner window interactive in Electron
+// so the slider reliably receives input.
+function openProgressPopover(taskId) {
+  const t = tasks.find((x) => x.id === taskId);
+  if (!t || t.done) return;
+  const dur = Math.max(1, t.durationMin || 60);
+  const el = progressPopover ? progressPopover.el : buildProgressPopover();
+  if (!progressPopover) progressPopover = { el, taskId };
+  progressPopover.taskId = taskId;
+  const btn = document.querySelector('.item-act.prog[data-task="' + taskId + '"]');
+  const rect = btn ? btn.getBoundingClientRect() : { left: 20, top: 20 };
+  const w = 210;
+  let left = rect.left - w - 8;
+  left = Math.max(6, Math.min(left, window.innerWidth - w - 6));
+  el.style.left = left + 'px';
+  el.style.top = Math.max(6, Math.min(rect.top, window.innerHeight - 160)) + 'px';
+  const slider = el.querySelector('#pp-slider');
+  slider.min = 0;
+  slider.max = String(dur);
+  slider.value = String(Math.min(dur, Math.round(t.progressMin || 0)));
+  el.querySelector('#pp-name').textContent = t.name;
+  el.querySelector('#pp-min').textContent = '0';
+  el.querySelector('#pp-max').textContent = fmtMin(dur);
+  el.querySelector('#pp-value').textContent = fmtMin(Math.round(t.progressMin || 0));
+  el.classList.add('visible');
+  // The planner window is click-through in Electron unless over an
+  // interactive bound — add the popover's rect so it stays interactive.
+  if (hasElectron) sendInteractiveBounds();
+}
+
+function commitProgressPopover() {
+  if (!progressPopover) return;
+  const t = tasks.find((x) => x.id === progressPopover.taskId);
+  const slider = progressPopover.el.querySelector('#pp-slider');
+  const minutes = parseInt(slider.value, 10) || 0;
+  hideProgressPopover();
+  if (!t || t.done) return;
+  const dur = Math.max(1, t.durationMin || 60);
+  t.progressMin = Math.min(dur, Math.max(0, minutes));
+  saveTasks();
+  if (t.progressMin >= dur) {
+    // Slider hit the full duration → auto-complete the task.
+    completeTask(t.id);
+    return;
+  }
+  renderTasks();
+  renderDailyProgress();
+  showToast('▲ "' + t.name + '" is ' + Math.round((t.progressMin / dur) * 100) + '% done');
+}
+
+function hideProgressPopover() {
+  if (progressPopover) {
+    progressPopover.el.classList.remove('visible');
+    progressPopover = null;
+  }
+  if (hasElectron) sendInteractiveBounds();
+}
+
+// Close the slider box when clicking anywhere else.
+app.addEventListener('click', (e) => {
+  if (e.target.closest('#progress-popover')) return;
+  hideProgressPopover();
+});
+
+// Rest the cursor on a row for ~2s → a detailed card pops up to the LEFT of
+// the row (its own window in Electron so it never covers the planner; a
+// fixed overlay clamped to the window in the browser preview). Leaving the
+// row hides it.
+function wireRowHover(row, item, kind) {
+  let timer = null;
+  let shown = false;
+  const show = () => {
+    if (shown) return;
+    shown = true;
+    const data = hoverPayload(item, kind);
+    const rect = row.getBoundingClientRect();
+    if (hasElectron) {
+      window.electronAPI.showHoverCard(Object.assign({}, data, {
+        rowTop: Math.round(rect.top),
+        rowBottom: Math.round(rect.bottom),
+      }));
+    } else {
+      showBrowserHoverCard(data, rect);
+    }
+  };
+  const hide = () => {
+    if (timer) { clearTimeout(timer); timer = null; }
+    if (!shown) return;
+    shown = false;
+    if (hasElectron) window.electronAPI.hideHoverCard();
+    else hideBrowserHoverCard();
+  };
+  row.addEventListener('mouseenter', () => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(show, 2000);
+  });
+  row.addEventListener('mouseleave', hide);
+  row.addEventListener('click', hide);
+}
+
+// Structured payload for the hover card (full name, date, time, etc.).
+function hoverPayload(item, kind) {
+  if (kind === 'deadline') {
+    const d = parseDateKey(item.due);
+    return {
+      kind: 'deadline',
+      name: item.name,
+      date: d ? d.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' }) : 'No date',
+      time: fmtTimeOfDay(item.time) || '—',
+      duration: null,
+      category: null,
+      status: item.done ? 'Done' : (dueTs(item) < Date.now() ? 'Overdue' : 'Pending'),
+    };
+  }
+  const t = item;
+  const d = parseDateKey(t.due);
+  const cat = categoryOf(t.category);
+  return {
+    kind: 'task',
+    name: t.name,
+    date: d ? d.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' }) : 'No date',
+    time: null,
+    duration: t.durationMin ? fmtMin(t.durationMin) : '—',
+    category: cat ? cat.name : null,
+    status: t.done ? 'Done' : (t.due && isPastDayKey(t.due) ? 'Overdue' : 'Pending'),
+    progressPct: taskProgressPct(t),
+  };
+}
+
+function isPastDayKey(key) {
+  if (!key) return false;
+  const d = parseDateKey(key);
+  return !!d && d.getTime() < todayStartMs();
+}
+
+// --- Browser-preview hover card (fixed overlay, anchored LEFT of the row) ---
+let browserHoverEl = null;
+function ensureBrowserHoverCard() {
+  if (browserHoverEl) return browserHoverEl;
+  const el = document.createElement('div');
+  el.id = 'row-hover-card';
+  document.body.appendChild(el);
+  browserHoverEl = el;
+  return el;
+}
+function showBrowserHoverCard(data, rect) {
+  const el = ensureBrowserHoverCard();
+  el.innerHTML = '';
+  const title = document.createElement('div');
+  title.className = 'rhc-title';
+  title.textContent = data.name;
+  el.appendChild(title);
+  const grid = document.createElement('div');
+  grid.className = 'rhc-grid';
+  const cells = [];
+  if (data.date) cells.push(['Date', data.date]);
+  if (data.time) cells.push(['Time', data.time]);
+  if (data.duration) cells.push(['Duration', data.duration]);
+  if (data.category) cells.push(['Category', data.category]);
+  cells.push(['Status', data.status]);
+  cells.forEach(([k, v]) => {
+    const cell = document.createElement('div');
+    cell.innerHTML = '<div class="k">' + k + '</div><div class="v">' + v + '</div>';
+    grid.appendChild(cell);
+  });
+  el.appendChild(grid);
+  if (typeof data.progressPct === 'number') {
+    const bar = document.createElement('div');
+    bar.className = 'rhc-bar';
+    bar.innerHTML = '<i style="width:' + Math.min(100, Math.max(0, data.progressPct)) + '%"></i>';
+    el.appendChild(bar);
+  }
+  // Anchor: card's right edge just left of the row, clamped to the window.
+  const winW = window.innerWidth;
+  const w = 292;
+  let left = rect.left - w - 8;
+  left = Math.max(6, Math.min(left, winW - w - 6));
+  el.style.left = left + 'px';
+  el.style.top = Math.max(6, Math.min(rect.top, window.innerHeight - 170)) + 'px';
+  el.classList.add('visible');
+}
+function hideBrowserHoverCard() {
+  if (browserHoverEl) browserHoverEl.classList.remove('visible');
 }
 
 function completeTask(id) {
@@ -1410,6 +1784,7 @@ function completeTask(id) {
   if (!t || t.done) return;
   t.done = true;
   t.completedAt = Date.now();
+  t.progressMin = Math.max(t.progressMin || 0, t.durationMin || 0); // fully weighted
   saveTasks();
   renderTasks();
   refreshActiveView();
@@ -1548,7 +1923,7 @@ function saveItemModal() {
       const t = tasks.find(x => x.id === imEditId);
       if (t) { t.name = name; t.due = due; t.durationMin = durationMin; t.category = imCategory; }
     } else {
-      tasks.unshift({ id: Date.now(), name, due, durationMin, done: false, category: imCategory });
+      tasks.unshift({ id: Date.now(), name, due, durationMin, done: false, category: imCategory, progressMin: 0 });
     }
     saveTasks();
     renderTasks();
@@ -2031,6 +2406,353 @@ function html2canvasCapture(rect) {
     }
   });
 }
+
+// === Focus session history ===
+// Every completed/paused session is recorded so the user can see how much
+// focused time each task has accumulated.
+let focusHistory = loadFocusHistory();
+const FOCUS_HISTORY_KEY = 'wolf-focus-history';
+const MAX_HISTORY = 30;
+
+function loadFocusHistory() {
+  try { return JSON.parse(localStorage.getItem(FOCUS_HISTORY_KEY)) || []; } catch (e) { return []; }
+}
+function saveFocusHistory() {
+  localStorage.setItem(FOCUS_HISTORY_KEY, JSON.stringify(focusHistory));
+}
+function recordFocusSession(taskId, minutes) {
+  if (!minutes || minutes < 0.5) return;
+  const t = tasks.find((x) => String(x.id) === String(taskId));
+  focusHistory.unshift({
+    id: Date.now() + Math.random(),
+    taskId: taskId || '',
+    name: t ? t.name : 'Custom session',
+    minutes: Math.round(minutes),
+    time: Date.now(),
+  });
+  focusHistory = focusHistory.slice(0, MAX_HISTORY);
+  saveFocusHistory();
+}
+
+function renderFocusHistory() {
+  const wrap = document.getElementById('focus-history');
+  const list = document.getElementById('focus-history-list');
+  if (!wrap || !list) return;
+  if (!focusHistory.length) { wrap.hidden = true; return; }
+  wrap.hidden = false;
+  list.innerHTML = '';
+  focusHistory.slice(0, 8).forEach((s) => {
+    const item = document.createElement('div');
+    item.className = 'fh-item';
+    const name = document.createElement('span');
+    name.className = 'fh-name'; name.textContent = s.name; name.title = s.name;
+    const min = document.createElement('span');
+    min.className = 'fh-min'; min.textContent = fmtMin(s.minutes);
+    const when = document.createElement('span');
+    when.className = 'fh-when'; when.textContent = timeAgo(s.time);
+    item.append(name, min, when);
+    list.appendChild(item);
+  });
+}
+
+// === Focus Timer (select a task, it counts down) ===
+// A task-linked countdown: pick a task (or use a custom duration), then
+// start/pause/reset. Drift-free — the remaining time comes from wall-clock
+// timestamps, so throttled ticks can never slow or speed it up. The timer
+// keeps running even while the panel is closed (the ⏱ header button pulses
+// and its tooltip shows the time left).
+let focusTimer = {
+  taskId: '',        // selected task id ('' = custom session)
+  totalMs: 25 * 60000,
+  remainingMs: 25 * 60000,
+  running: false,
+  endAt: 0,          // wall-clock timestamp the running session ends at
+  sessionStartAt: 0, // wall-clock timestamp this running session began (progress)
+  interval: null,
+};
+let focusBeeper = null; // lazy AudioContext for the completion chime
+
+const focusEl = (id) => document.getElementById(id);
+
+function fmtFocus(ms) {
+  const s = Math.max(0, Math.ceil(ms / 1000));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  return h > 0 ? h + ':' + pad2(m) + ':' + pad2(sec) : pad2(m) + ':' + pad2(sec);
+}
+
+function focusTaskName() {
+  if (!focusTimer.taskId) return '';
+  const t = tasks.find((x) => String(x.id) === focusTimer.taskId);
+  return t ? t.name : '';
+}
+
+function renderFocusDisplay() {
+  const timeEl = focusEl('focus-time');
+  const ringEl = focusEl('focus-ring');
+  const nameEl = focusEl('focus-task-name');
+  if (timeEl) timeEl.textContent = fmtFocus(focusTimer.remainingMs);
+  if (ringEl && focusTimer.totalMs > 0) {
+    const p = Math.max(0, Math.min(1, focusTimer.remainingMs / focusTimer.totalMs));
+    ringEl.style.setProperty('--p', (p * 360).toFixed(1));
+  }
+  if (nameEl) nameEl.textContent = focusTaskName();
+  const openBtn = focusEl('focus-open');
+  if (openBtn) {
+    openBtn.title = focusTimer.running
+      ? 'Focus: ' + fmtFocus(focusTimer.remainingMs) + ' left'
+      : 'Focus timer';
+  }
+  renderFocusMini();
+}
+
+// Slim top bar under the planner header: shows the focused task + the
+// ticking countdown whenever a session is active (running or paused).
+function renderFocusMini() {
+  const mini = document.getElementById('focus-mini');
+  if (!mini) return;
+  const active = focusTimer.running ||
+    (focusTimer.remainingMs > 0 && focusTimer.remainingMs < focusTimer.totalMs);
+  mini.hidden = !active;
+  if (!active) return;
+  const nameEl = document.getElementById('focus-mini-name');
+  const timeEl = document.getElementById('focus-mini-time');
+  if (nameEl) nameEl.textContent = focusTaskName() || 'Custom session';
+  if (timeEl) timeEl.textContent = fmtFocus(focusTimer.remainingMs) + (focusTimer.running ? '' : ' (paused)');
+}
+
+// Commit the elapsed focus time into the focused task's progressMin (capped
+// at its duration) and re-render the bars — called on pause/reset/finish so
+// focused minutes are weighted into both the row bar and the daily bar.
+function commitFocusProgress() {
+  if (!focusTimer.taskId || !focusTimer.sessionStartAt) return;
+  const t = tasks.find((x) => String(x.id) === String(focusTimer.taskId));
+  const elapsed = (Date.now() - focusTimer.sessionStartAt) / 60000;
+  focusTimer.sessionStartAt = 0;
+  if (!t || t.done || elapsed <= 0) return;
+  const dur = Math.max(1, t.durationMin || 60);
+  t.progressMin = Math.min(dur, (t.progressMin || 0) + elapsed);
+  saveTasks();
+  if (t.progressMin >= dur) {
+    // Focus filled the task's whole estimate → auto-complete.
+    t.done = true;
+    t.completedAt = Date.now();
+    saveTasks();
+    bumpStreak();
+    showToast('🎉 "' + t.name + '" completed from focus!', 'toast-focus', 4000);
+  }
+}
+
+// Rebuild the task dropdown from the live task list (done tasks excluded);
+// keeps the currently selected task when the list refreshes mid-session.
+function renderFocusTasks() {
+  const sel = focusEl('focus-task');
+  if (!sel) return;
+  const prev = focusTimer.taskId;
+  // If the focused task was deleted or completed since, drop the stale id so
+  // the dropdown and the session stay in sync.
+  const stillExists = !!prev && tasks.some((t) => String(t.id) === prev && !t.done);
+  if (!stillExists) focusTimer.taskId = '';
+  sel.innerHTML = '<option value="">— Choose a task… —</option>';
+  tasks.filter((t) => !t.done).forEach((t) => {
+    const o = document.createElement('option');
+    o.value = String(t.id);
+    o.textContent = t.name + (t.durationMin ? ' (' + fmtMin(t.durationMin) + ')' : '');
+    sel.appendChild(o);
+  });
+  sel.value = stillExists ? prev : '';
+}
+
+function openFocusPanel(taskId) {
+  if (taskId) focusTimer.taskId = String(taskId);
+  renderFocusTasks();
+  // Picking a task pre-fills the minutes from its stored duration (only when
+  // not running, so a live session is never reset underneath the user).
+  if (taskId && !focusTimer.running) {
+    const t = tasks.find((x) => String(x.id) === String(taskId));
+    if (t && t.durationMin) {
+      const m = Math.max(1, Math.min(720, Math.round(t.durationMin)));
+      focusEl('focus-minutes').value = m;
+      focusTimer.totalMs = m * 60000;
+      focusTimer.remainingMs = focusTimer.totalMs;
+    }
+  }
+  infoPopup.classList.add('popup-hidden');
+  settingsPanel.classList.add('panel-hidden');
+  vaultPanel.classList.add('popup-hidden');
+  notesPanel.classList.add('panel-hidden');
+  focusPanel.classList.remove('popup-hidden');
+  renderFocusDisplay();
+  renderFocusHistory();
+  sendInteractiveBounds();
+}
+
+function closeFocusPanel() {
+  focusPanel.classList.add('popup-hidden');
+  sendInteractiveBounds();
+}
+
+function tickFocus() {
+  const left = Math.max(0, focusTimer.endAt - Date.now());
+  focusTimer.remainingMs = left;
+  renderFocusDisplay();
+  // Progress bars creep up in real time while the session runs.
+  updateLiveProgressBars();
+  if (left <= 0) finishFocus();
+}
+
+function startFocus() {
+  if (focusTimer.running) return;
+  ensureFocusBeeper(); // prime audio on this user gesture so the chime plays
+  if (focusTimer.remainingMs <= 0) focusTimer.remainingMs = focusTimer.totalMs;
+  focusTimer.running = true;
+  focusTimer.endAt = Date.now() + focusTimer.remainingMs;
+  focusTimer.sessionStartAt = Date.now();
+  focusEl('focus-start').textContent = '❚❚ Pause';
+  focusPanel.classList.add('running');
+  focusEl('focus-open').classList.add('running');
+  tickFocus();
+  focusTimer.interval = setInterval(tickFocus, 250);
+}
+
+function pauseFocus() {
+  if (!focusTimer.running) return;
+  focusTimer.running = false;
+  focusTimer.remainingMs = Math.max(0, focusTimer.endAt - Date.now());
+  clearInterval(focusTimer.interval);
+  focusTimer.interval = null;
+  const elapsed = (Date.now() - focusTimer.sessionStartAt) / 60000;
+  commitFocusProgress();
+  recordFocusSession(focusTimer.taskId, elapsed);
+  focusEl('focus-start').textContent = '▶ Resume';
+  focusPanel.classList.remove('running');
+  focusEl('focus-open').classList.remove('running');
+  renderFocusDisplay();
+  renderTasks(); // rebuild rows so the committed progress shows on the bar
+  renderDailyProgress();
+  renderFocusHistory();
+}
+
+function resetFocus() {
+  focusTimer.running = false;
+  clearInterval(focusTimer.interval);
+  focusTimer.interval = null;
+  commitFocusProgress();
+  focusTimer.remainingMs = focusTimer.totalMs;
+  focusEl('focus-start').textContent = '▶ Start';
+  focusPanel.classList.remove('running');
+  focusEl('focus-open').classList.remove('running');
+  renderFocusDisplay();
+  renderTasks();
+  renderDailyProgress();
+}
+
+function finishFocus() {
+  const name = focusTaskName();
+  const elapsed = focusTimer.sessionStartAt ? (Date.now() - focusTimer.sessionStartAt) / 60000 : 0;
+  focusTimer.running = false;
+  clearInterval(focusTimer.interval);
+  focusTimer.interval = null;
+  commitFocusProgress(); // the focused minutes weight into the task + daily bars
+  recordFocusSession(focusTimer.taskId, elapsed);
+  focusTimer.remainingMs = 0;
+  renderFocusDisplay();
+  focusEl('focus-start').textContent = '▶ Start';
+  focusPanel.classList.remove('running');
+  focusEl('focus-open').classList.remove('running');
+  showToast('🎉 ' + (name ? '"' + name + '"' : 'Focus') + ' complete — great work!', 'toast-focus', 5000);
+  focusBeep();
+  // Flash the progress ring so the completion is unmistakable.
+  const ring = focusEl('focus-ring');
+  if (ring) {
+    ring.classList.add('flash');
+    setTimeout(() => ring.classList.remove('flash'), 1300);
+  }
+  renderTasks();
+  renderDailyProgress();
+  renderFocusHistory();
+}
+
+// Create/unlock the shared AudioContext (Chromium only lets audio start after
+// a user gesture, so the beep below is primed by the Start click).
+function ensureFocusBeeper() {
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC || focusBeeper) return;
+    focusBeeper = new AC();
+    if (focusBeeper.state === 'suspended') focusBeeper.resume();
+  } catch (e) { /* audio unavailable — the toast + flash still fire */ }
+}
+
+// Play a short ascending chime (G5 G5 C6) — a satisfying "time's up".
+function focusBeep() {
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    if (!focusBeeper) focusBeeper = new AC();
+    if (focusBeeper.state === 'suspended') focusBeeper.resume();
+    const t0 = focusBeeper.currentTime;
+    [0, 0.22, 0.44].forEach((off, i) => {
+      const o = focusBeeper.createOscillator();
+      const g = focusBeeper.createGain();
+      o.type = 'sine';
+      o.frequency.value = i === 2 ? 1046.5 : 783.99; // G5 G5 C6
+      g.gain.setValueAtTime(0.0001, t0 + off);
+      g.gain.exponentialRampToValueAtTime(0.35, t0 + off + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + off + 0.28);
+      o.connect(g);
+      g.connect(focusBeeper.destination);
+      o.start(t0 + off);
+      o.stop(t0 + off + 0.3);
+    });
+  } catch (e) { /* audio unavailable — the toast + flash still fire */ }
+}
+
+// === Focus Timer UI wiring ===
+const focusOpenBtn = document.getElementById('focus-open');
+if (focusOpenBtn) {
+  focusOpenBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (focusPanel.classList.contains('popup-hidden')) openFocusPanel();
+    else closeFocusPanel();
+  });
+}
+// The slim top mini-bar opens the focus panel when clicked.
+const focusMiniEl = document.getElementById('focus-mini');
+if (focusMiniEl) {
+  focusMiniEl.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (focusPanel.classList.contains('popup-hidden')) openFocusPanel();
+    else closeFocusPanel();
+  });
+}
+document.getElementById('focus-close').addEventListener('click', (e) => { e.stopPropagation(); closeFocusPanel(); });
+document.getElementById('focus-start').addEventListener('click', () => {
+  if (focusTimer.running) pauseFocus(); else startFocus();
+});
+document.getElementById('focus-reset').addEventListener('click', resetFocus);
+// Picking a task pre-fills its duration; typing a custom value overrides.
+document.getElementById('focus-task').addEventListener('change', (e) => {
+  if (focusTimer.running) return; // never swap targets mid-session
+  focusTimer.taskId = e.target.value || '';
+  const t = focusTimer.taskId ? tasks.find((x) => String(x.id) === focusTimer.taskId) : null;
+  if (t && t.durationMin) {
+    const m = Math.max(1, Math.min(720, Math.round(t.durationMin)));
+    document.getElementById('focus-minutes').value = m;
+    focusTimer.totalMs = m * 60000;
+  }
+  focusTimer.remainingMs = focusTimer.totalMs;
+  renderFocusDisplay();
+});
+document.getElementById('focus-minutes').addEventListener('change', () => {
+  if (focusTimer.running) return;
+  const m = Math.max(1, Math.min(720, parseInt(document.getElementById('focus-minutes').value, 10) || 25));
+  document.getElementById('focus-minutes').value = m;
+  focusTimer.totalMs = m * 60000;
+  focusTimer.remainingMs = focusTimer.totalMs;
+  renderFocusDisplay();
+});
 
 // === Initialize ===
 init();

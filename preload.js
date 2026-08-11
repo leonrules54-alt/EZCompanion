@@ -23,6 +23,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openNotesPanel: () => ipcRenderer.send('open-notes'),
   closeNotes: () => ipcRenderer.send('notes-close'),
 
+  // Hover card (detailed task/deadline preview to the LEFT of the planner)
+  showHoverCard: (payload) => ipcRenderer.send('hover-card-show', payload),
+  hideHoverCard: () => ipcRenderer.send('hover-card-hide'),
+  onHoverCardData: (callback) => {
+    const handler = (event, data) => callback(data);
+    ipcRenderer.on('hover-card-data', handler);
+    return () => ipcRenderer.removeListener('hover-card-data', handler);
+  },
+
   // Full-screen deadline alert (shown when a deadline comes due; the alert
   // window itself receives the deadline via onDeadlineAlertData)
   showDeadlineAlert: (dl) => ipcRenderer.send('deadline-alert-show', dl),

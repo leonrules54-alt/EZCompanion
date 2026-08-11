@@ -79,12 +79,43 @@ let cursorPollInterval = null;
 let buttonPollInterval = null;
 let mouseIgnored = true;
 
+// === Multi-monitor anchoring ===
+// The whole app anchors to ONE display: whichever display the cursor is on
+// at launch (so with two monitors the app appears where the user clicks),
+// falling back to the primary. Every window's position + size derives from
+// that display's workArea, and is recomputed whenever the display config
+// changes (resolution / scale / plug-unplug / primary switch), so the app
+// never ends up off-screen or stranded on the wrong monitor.
+let appDisplay = null;
+
+function anchorDisplay() {
+  // Keep the existing anchor while it still exists; only re-anchor when it
+  // was unplugged (then pick the display under the cursor again).
+  if (appDisplay && screen.getAllDisplays().some((d) => d.id === appDisplay.id)) {
+    return appDisplay;
+  }
+  appDisplay = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+  dlog('anchor display →', appDisplay.id, appDisplay.bounds);
+  return appDisplay;
+}
+
 // Layout: the pet is a slim always-visible sidebar pinned below the status
 // pill in the top-right corner. The planner (deadlines + daily tasks) fills
 // the whole window. The floating launcher button lives in its own tiny
 // window in the top-LEFT corner of the screen.
 const SIDEBAR_W = 430;
-const SIDEBAR_TOP = 58;
+// The planner starts a little lower than the old 58px so the status strip
+// has breathing room and the whole app feels less "hugged" against the top.
+const SIDEBAR_TOP = 78;
+
+// Sidebar height for a given work-area height: full height minus the status
+// strip (a touch longer than the old layout), with a 480px floor for tiny
+// screens and a hard clamp so the window can never extend past the bottom of
+// the work area (a stale size from a bigger monitor must never cut the
+// planner off on a smaller one).
+function petHeight(waHeight) {
+  return Math.min(Math.max(480, waHeight - 50), waHeight - SIDEBAR_TOP);
+}
 
 // Clipboard history state
 let clipboardHistory = [];             // [{text, time}]
@@ -96,14 +127,11 @@ const clipboardHistoryFile = () => path.join(app.getPath('userData'), 'clipboard
 
 // === Pet Window (always-visible planner sidebar) ===
 function createPetWindow() {
-  const wa = screen.getPrimaryDisplay().workArea;
+  const wa = anchorDisplay().workArea;
 
   petWindow = new BrowserWindow({
     width: SIDEBAR_W,
-    // Full-height planner: the glass stretches from just under the status
-    // bar down to near the bottom of the work area (a touch longer than the
-    // old layout). Small screens fall back to a 480px minimum.
-    height: Math.max(480, wa.height - 50),
+    height: petHeight(wa.height),
     x: wa.x + wa.width - SIDEBAR_W - 8,
     y: wa.y + SIDEBAR_TOP,
     frame: false,
@@ -171,7 +199,7 @@ function watchRenderer(win, label) {
 // === Status Window (static overlay title bar, top-right, fully click-through) ===
 function createStatusWindow() {
   if (statusWindow) return;
-  const wa = screen.getPrimaryDisplay().workArea;
+  const wa = anchorDisplay().workArea;
 
   statusWindow = new BrowserWindow({
     // Same width + right edge as the pet sidebar, so the status bar reads
@@ -219,7 +247,7 @@ let buttonArm = { start: 0, progress: 0, armed: false };
 
 function createButtonWindow() {
   if (buttonWindow) return;
-  const wa = screen.getPrimaryDisplay().workArea;
+  const wa = anchorDisplay().workArea;
   // Parked flush against the left edge of the planner sidebar (8px gap). The
   // ring menu (174px, centred in this window) then opens without ever
   // overlapping the planner. Clamped so a very narrow display can't push the
@@ -327,12 +355,13 @@ let notesHiddenBySleep = false; // notes were open when the app slept — restor
 
 function createNotesWindow() {
   if (notesWindow) return;
-  const wa = screen.getPrimaryDisplay().workArea;
-  const sideH = Math.max(480, wa.height - SIDEBAR_TOP - 10); // same as the pet window
+  const wa = anchorDisplay().workArea;
+  const sideH = petHeight(wa.height); // same basis as the pet window
   notesWindow = new BrowserWindow({
     width: NOTES_W,
-    // Roughly half the sidebar's height — a big card, not a full-length bar.
-    height: Math.max(280, Math.round(sideH / 2)),
+    // Roughly half the sidebar's height — a big card, not a full-length bar
+    // (clamped so it can't outgrow the work area on small screens).
+    height: Math.min(Math.max(280, Math.round(sideH / 2)), wa.height - SIDEBAR_TOP),
     // Right edge sits just left of the sidebar; clamped to the screen on
     // narrow displays.
     x: Math.max(wa.x, wa.x + wa.width - SIDEBAR_W - 8 - NOTES_W - 12),
@@ -370,6 +399,73 @@ function toggleNotesWindow() {
     notesWindow.show();
     notesWindow.focus();
   }
+}
+
+// === Hover card (detailed task/deadline preview) ===
+// A small always-on-top card that pops up to the LEFT of the planner when the
+// user rests the cursor on a task/deadline row for ~2s. It lives in its own
+// click-through window so it never covers the planner or blocks clicks.
+const HOVER_CARD_W = 300;
+let hoverCardWindow = null;
+
+function createHoverCardWindow() {
+  if (hoverCardWindow) return;
+  const wa = anchorDisplay().workArea;
+  hoverCardWindow = new BrowserWindow({
+    width: HOVER_CARD_W,
+    height: 170,
+    x: Math.max(wa.x, wa.x + wa.width - SIDEBAR_W - 8 - HOVER_CARD_W - 12),
+    y: wa.y + SIDEBAR_TOP,
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    resizable: false,
+    hasShadow: false,
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  hardenWindow(hoverCardWindow);
+  loadAppFile(hoverCardWindow, 'hover-card.html');
+  // Purely informational: the card never takes clicks.
+  hoverCardWindow.setIgnoreMouseEvents(true, { forward: true });
+  hoverCardWindow.on('closed', () => { hoverCardWindow = null; });
+}
+
+// Show the card to the LEFT of the planner, vertically aligned with the row
+// being hovered (clamped so it never drifts off the work area).
+function showHoverCard(payload) {
+  if (!payload || !payload.name) return;
+  createHoverCardWindow();
+  if (!hoverCardWindow) return;
+  const wa = anchorDisplay().workArea;
+  const pet = petWindow && !petWindow.isDestroyed() ? petWindow.getBounds() : null;
+  // Anchor: card's right edge hugs the planner's left edge (12px gap).
+  const baseX = pet ? pet.x - HOVER_CARD_W - 12 : wa.x + 8;
+  let x = Math.max(wa.x, Math.min(baseX, wa.x + wa.width - HOVER_CARD_W - 4));
+  let y = pet ? pet.y + Math.round(payload.rowTop || 0) - 8 : wa.y + SIDEBAR_TOP;
+  y = Math.max(wa.y, Math.min(y, wa.y + wa.height - 178));
+  hoverCardWindow.setBounds({ x, y, width: HOVER_CARD_W, height: 170 });
+  const present = () => {
+    if (!hoverCardWindow || hoverCardWindow.isDestroyed()) return;
+    hoverCardWindow.webContents.send('hover-card-data', payload);
+    hoverCardWindow.setAlwaysOnTop(true, 'screen-saver');
+    hoverCardWindow.showInactive();
+  };
+  if (hoverCardWindow.webContents.isLoading()) {
+    hoverCardWindow.webContents.once('did-finish-load', present);
+  } else {
+    present();
+  }
+}
+
+function hideHoverCard() {
+  if (hoverCardWindow && !hoverCardWindow.isDestroyed()) hoverCardWindow.hide();
 }
 
 function closeNotesWindow() {
@@ -426,7 +522,7 @@ let weekPollInterval = null;
 
 function createWeekWindow() {
   if (weekWindow) return;
-  const wa = screen.getPrimaryDisplay().workArea;
+  const wa = anchorDisplay().workArea;
   weekWindow = new BrowserWindow({
     width: wa.width - 16,
     // Tall enough for each day column to show its whole plan (~a third of
@@ -482,7 +578,7 @@ let deadlineAlertWindow = null;
 
 function createDeadlineAlertWindow() {
   if (deadlineAlertWindow && !deadlineAlertWindow.isDestroyed()) return;
-  const b = screen.getPrimaryDisplay().bounds;
+  const b = anchorDisplay().bounds;
   deadlineAlertWindow = new BrowserWindow({
     width: b.width,
     height: b.height,
@@ -617,6 +713,7 @@ function applySleep(value) {
     }
     if (deadlineAlertWindow && !deadlineAlertWindow.isDestroyed() && deadlineAlertWindow.isVisible()) closeDeadlineAlert();
     closeScreenshotOverlay(); // don't leave the capture overlay up over a hidden app
+    hideHoverCard();
     setMouseIgnored(true);
   } else if (!peekActive) {
     // Wake: restore the active mode's windows AND force the planner back on
@@ -646,6 +743,7 @@ function setPeek(active) {
     if (statusWindow && !statusWindow.isDestroyed()) statusWindow.hide();
     if (buttonWindow && !buttonWindow.isDestroyed()) buttonWindow.hide();
     if (weekWindow && !weekWindow.isDestroyed() && weekWindow.isVisible()) weekWindow.hide();
+    hideHoverCard();
   } else if (!sleeping) {
     restoreModeWindows();
     // Notes hidden by a sleep cycle come back once the peek ends.
@@ -805,6 +903,10 @@ ipcMain.on('set-always-on-top', (event, value) => {
 // Quick Notes popup
 ipcMain.on('open-notes', () => toggleNotesWindow());
 ipcMain.on('notes-close', () => closeNotesWindow());
+
+// Hover card (task/deadline detail preview to the LEFT of the planner)
+ipcMain.on('hover-card-show', (_e, payload) => showHoverCard(payload));
+ipcMain.on('hover-card-hide', () => hideHoverCard());
 
 // Sleep / wake (Ctrl+Shift+S — sent by the renderer's keydown fallback)
 ipcMain.on('toggle-sleep', () => toggleSleep());
@@ -1020,6 +1122,10 @@ function stopPolling() {
     clearInterval(weekPollInterval);
     weekPollInterval = null;
   }
+  if (layoutWatchdog) {
+    clearInterval(layoutWatchdog);
+    layoutWatchdog = null;
+  }
 }
 
 // === System tray ===
@@ -1055,6 +1161,9 @@ function createTray() {
     { label: 'Show Planner', click: () => {
       // Wake first if asleep (the renderer stays faded otherwise).
       if (sleeping) applySleep(false);
+      // Summoned from the tray — appear on the display the cursor is on now.
+      appDisplay = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+      relayoutWindows();
       // Route through the mode system so the week strip can't linger
       // alongside the sidebar (one mode at a time).
       setAppMode(activeMode === 'week' ? 'tasks' : activeMode);
@@ -1063,6 +1172,158 @@ function createTray() {
     { type: 'separator' },
     { label: 'Quit', click: () => app.quit() },
   ]));
+}
+
+// === Display-change re-layout ===
+// Recompute every window's position + size from the anchor display's current
+// metrics. Called at startup (safety net after creation) and on every
+// display-config change, so a resolution / scale / plug change can never
+// leave a window off-screen or on the wrong monitor.
+function relayoutWindows() {
+  const disp = anchorDisplay();
+  const wa = disp.workArea;
+  dlog('relayout windows → display', disp.id, disp.bounds);
+
+  if (petWindow && !petWindow.isDestroyed()) {
+    petWindow.setBounds({
+      x: wa.x + wa.width - SIDEBAR_W - 8,
+      y: wa.y + SIDEBAR_TOP,
+      width: SIDEBAR_W,
+      height: petHeight(wa.height),
+    });
+  }
+  if (statusWindow && !statusWindow.isDestroyed()) {
+    statusWindow.setBounds({
+      x: wa.x + wa.width - SIDEBAR_W - 8,
+      y: wa.y + 6,
+      width: SIDEBAR_W,
+      height: 46,
+    });
+  }
+  if (buttonWindow && !buttonWindow.isDestroyed()) {
+    // Parked flush against the left edge of the planner sidebar (8px gap);
+    // clamped so a very narrow display can't push the button off-screen.
+    const btnX = Math.max(wa.x, wa.x + wa.width - SIDEBAR_W - 8 - 8 - BTN_SIZE);
+    buttonWindow.setBounds({ x: btnX, y: wa.y + 16, width: BTN_SIZE, height: BTN_SIZE });
+  }
+  if (notesWindow && !notesWindow.isDestroyed()) {
+    const sideH = petHeight(wa.height);
+    notesWindow.setBounds({
+      x: Math.max(wa.x, wa.x + wa.width - SIDEBAR_W - 8 - NOTES_W - 12),
+      y: wa.y + SIDEBAR_TOP,
+      width: NOTES_W,
+      height: Math.min(Math.max(280, Math.round(sideH / 2)), wa.height - SIDEBAR_TOP),
+    });
+  }
+  if (weekWindow && !weekWindow.isDestroyed()) {
+    weekWindow.setBounds({
+      x: wa.x + 8,
+      y: wa.y + 8,
+      width: wa.width - 16,
+      height: Math.min(430, Math.max(280, Math.round(wa.height * 0.32))),
+    });
+  }
+  if (deadlineAlertWindow && !deadlineAlertWindow.isDestroyed()) {
+    const b = disp.bounds;
+    deadlineAlertWindow.setBounds({ x: b.x, y: b.y, width: b.width, height: b.height });
+  }
+  if (screenshotOverlay && !screenshotOverlay.isDestroyed() && screenshotDisplay) {
+    screenshotOverlay.setBounds(screenshotDisplay.bounds);
+  }
+  if (hoverCardWindow && !hoverCardWindow.isDestroyed() && hoverCardWindow.isVisible()) {
+    // Re-anchor the card to the (possibly new) planner position.
+    const pet = petWindow && !petWindow.isDestroyed() ? petWindow.getBounds() : null;
+    if (pet) {
+      const x = Math.max(wa.x, Math.min(pet.x - HOVER_CARD_W - 12, wa.x + wa.width - HOVER_CARD_W - 4));
+      const y = Math.max(wa.y, Math.min(hoverCardWindow.getBounds().y, wa.y + wa.height - 178));
+      hoverCardWindow.setBounds({ x, y, width: HOVER_CARD_W, height: 170 });
+    }
+  }
+}
+
+// Every display-config event re-runs the layout: resolution/scale changes
+// (display-metrics-changed), monitors plugged in or unplugged, and the
+// primary display switching. Each time, the app RE-ANCHORS to whichever
+// display the cursor is on NOW — so if you started on a big monitor and are
+// now on a smaller screen, the whole app re-sizes to the screen in front of
+// you instead of keeping the old monitor's proportions.
+function watchDisplayChanges() {
+  ['display-metrics-changed', 'display-added', 'display-removed'].forEach((ev) => {
+    screen.on(ev, () => {
+      dlog('display change:', ev);
+      appDisplay = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+      relayoutWindows();
+    });
+  });
+}
+
+// True when a rectangle intersects any display's work area (used to detect
+// windows stranded off-screen, e.g. after a monitor was unplugged).
+function isOnScreen(bounds) {
+  return screen.getAllDisplays().some((d) => {
+    const wa = d.workArea;
+    return (
+      bounds.x < wa.x + wa.width && bounds.x + bounds.width > wa.x &&
+      bounds.y < wa.y + wa.height && bounds.y + bounds.height > wa.y
+    );
+  });
+}
+
+// === Layout watchdog (self-healing) ===
+// Windows doesn't always deliver display events — a monitor unplugged while
+// the app is asleep, a resolution/scale changed via the control panel, or
+// the OS relocating windows between displays can all happen without one.
+// Every few seconds, verify the app is still where the anchor layout expects
+// it and re-apply if anything drifted, so the layout ALWAYS recalculates.
+let layoutWatchdog = null;
+
+// If the OS relocated the pet window to another display (unplug, primary
+// switch, user dragging it in an OS-specific way), re-anchor to that display
+// so the whole app follows the window instead of hovering on the old one.
+function followPetWindowDisplay() {
+  if (!petWindow || petWindow.isDestroyed()) return;
+  const b = petWindow.getBounds();
+  const nearest = screen.getDisplayNearestPoint({ x: b.x + b.width / 2, y: b.y + b.height / 2 });
+  if (!appDisplay || nearest.id !== appDisplay.id) {
+    appDisplay = nearest;
+    dlog('re-anchored to pet window display →', nearest.id);
+    relayoutWindows();
+  }
+}
+
+function startLayoutWatchdog() {
+  if (layoutWatchdog) return;
+  layoutWatchdog = setInterval(() => {
+    if (!petWindow || petWindow.isDestroyed()) return;
+    // Follow the window if Windows moved it to another display…
+    followPetWindowDisplay();
+    // …otherwise confirm the layout still matches the anchor and re-apply if
+    // anything drifted (resolution/scale changed without a delivered event).
+    const disp = anchorDisplay();
+    const wa = disp.workArea;
+    const b = petWindow.getBounds();
+    const ex = wa.x + wa.width - SIDEBAR_W - 8;
+    const ey = wa.y + SIDEBAR_TOP;
+    const ew = SIDEBAR_W;
+    const eh = petHeight(wa.height);
+    if (
+      Math.abs(b.x - ex) > 4 || Math.abs(b.y - ey) > 4 ||
+      Math.abs(b.width - ew) > 4 || Math.abs(b.height - eh) > 4
+    ) {
+      dlog('layout drift detected — relayout');
+      relayoutWindows();
+    }
+    // The launcher button must always be on screen unless the app is asleep,
+    // peeking, or in week mode. Self-heal if it went missing (a hide that
+    // never got restored, or a stale placement that left it off-screen).
+    if (buttonWindow && !buttonWindow.isDestroyed() &&
+        !sleeping && !peekActive && activeMode !== 'week' &&
+        (!buttonWindow.isVisible() || !isOnScreen(buttonWindow.getBounds()))) {
+      dlog('launcher button missing — restoring');
+      relayoutWindows();
+      buttonWindow.show();
+    }
+  }, 3000);
 }
 
 // === App Lifecycle ===
@@ -1076,6 +1337,11 @@ if (!app.requestSingleInstanceLock()) {
     // Wake first if asleep, so the renderer isn't left faded while the
     // windows come back.
     if (sleeping) applySleep(false);
+    // The user just launched the app again — bring it to the display their
+    // cursor is on NOW (e.g. it was on the big monitor, they moved to the
+    // laptop, and double-clicked the shortcut).
+    appDisplay = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+    relayoutWindows();
     // Re-show the ACTIVE mode only (never the week strip AND the sidebar at
     // once — one mode at a time).
     setAppMode(activeMode);
@@ -1091,9 +1357,15 @@ if (!app.requestSingleInstanceLock()) {
     createPetWindow();
     createStatusWindow();
     createButtonWindow();
-    createScreenshotOverlay(screen.getPrimaryDisplay());
+    createScreenshotOverlay(anchorDisplay());
     startClipboardWatcher();
     createTray();
+    // Re-apply the layout after creation (safe even if a display changed
+    // between the windows being built) and keep it in sync with any display
+    // configuration change while the app runs.
+    relayoutWindows();
+    watchDisplayChanges();
+    startLayoutWatchdog();
     // System-wide Ctrl+Shift+S = sleep/wake (hide the app from the screen,
     // then summon it back). Registered AFTER the windows exist so the
     // fallback (before-input-event on each window) is already in place.
@@ -1123,6 +1395,7 @@ app.on('will-quit', () => {
   if (deadlineAlertWindow) { deadlineAlertWindow.close(); deadlineAlertWindow = null; }
   if (buttonWindow) { buttonWindow.close(); buttonWindow = null; }
   if (weekWindow) { weekWindow.close(); weekWindow = null; }
+  if (hoverCardWindow) { hoverCardWindow.close(); hoverCardWindow = null; }
 });
 
 app.on('window-all-closed', () => {

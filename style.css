@@ -105,6 +105,7 @@ body.electron-mode #app {
    silently swallow clicks aimed at the planner underneath it. */
 body.electron-mode #info-popup:not(.popup-hidden) .popup-glass,
 body.electron-mode #clipboard-vault:not(.popup-hidden) .popup-glass,
+body.electron-mode #focus-panel:not(.popup-hidden) .popup-glass,
 body.electron-mode #notes-panel:not(.panel-hidden) .panel-glass,
 body.electron-mode #tasks-panel:not(.panel-hidden),
 body.electron-mode #tasks-panel:not(.panel-hidden) .panel-glass,
@@ -487,6 +488,249 @@ body.electron-mode #browser-launcher {
   line-height: 1.5;
 }
 
+/* === Focus Timer === */
+#focus-panel {
+  position: absolute;
+  top: 52px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 260; /* above the always-visible planner (210) */
+  transition: all 0.35s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+#focus-panel.popup-hidden {
+  opacity: 0;
+  transform: translateX(-50%) translateY(10px) scale(0.95);
+  pointer-events: none;
+}
+
+.focus-glass {
+  width: 300px;
+  padding: 22px 22px 18px;
+}
+
+.focus-title {
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: var(--text-main);
+}
+
+.focus-sub {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin: 3px 0 12px;
+}
+
+/* Task dropdown */
+.focus-select {
+  width: 100%;
+  padding: 9px 12px 9px 10px;
+  border-radius: 12px;
+  border: 1px solid var(--hairline-strong);
+  background: var(--surface-input);
+  color: var(--text-main);
+  font-family: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  outline: none;
+  appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--text-dim) 50%),
+    linear-gradient(135deg, var(--text-dim) 50%, transparent 50%);
+  background-position:
+    calc(100% - 17px) 50%,
+    calc(100% - 12px) 50%;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+  padding-right: 30px;
+  transition: border-color 0.2s, background-color 0.2s, box-shadow 0.2s;
+}
+.focus-select:hover,
+.focus-select:focus {
+  border-color: rgba(163, 230, 53, 0.55);
+  box-shadow: 0 0 0 3px rgba(163, 230, 53, 0.12);
+  background-color: var(--surface-btn-hover);
+}
+.focus-select option {
+  background: var(--bg-1);
+  color: var(--text-main);
+}
+
+/* Minutes input */
+.focus-min-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 12px;
+}
+.focus-min-row label {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+#focus-minutes {
+  width: 74px;
+  padding: 7px 8px;
+  border-radius: 12px;
+  border: 1px solid var(--hairline-strong);
+  background: var(--surface-input);
+  color: var(--text-main);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  text-align: center;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+#focus-minutes:focus {
+  border-color: rgba(163, 230, 53, 0.6);
+  box-shadow: 0 0 0 3px rgba(163, 230, 53, 0.14);
+}
+#focus-minutes::-webkit-inner-spin-button { opacity: 0.4; }
+
+/* Countdown display: big time inside a conic progress ring */
+.focus-display {
+  position: relative;
+  width: 172px;
+  height: 172px;
+  margin: 16px auto 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+}
+.focus-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(from -90deg, #a3e635 calc(var(--p, 360) * 1%), rgba(255, 255, 255, 0.08) 0);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 7px), #000 calc(100% - 6px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 7px), #000 calc(100% - 6px));
+  filter: drop-shadow(0 0 10px rgba(163, 230, 53, 0.45));
+  transition: background 0.25s linear;
+}
+.focus-ring::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+#focus-panel.running .focus-ring {
+  animation: focusPulse 1.6s ease-in-out infinite;
+}
+@keyframes focusPulse {
+  0%, 100% { filter: drop-shadow(0 0 8px rgba(163, 230, 53, 0.4)); }
+  50% { filter: drop-shadow(0 0 24px rgba(163, 230, 53, 0.95)); }
+}
+.focus-ring.flash {
+  animation: focusFlash 0.7s ease 2;
+}
+@keyframes focusFlash {
+  0%, 100% { filter: drop-shadow(0 0 10px rgba(163, 230, 53, 0.45)); }
+  50% { filter: drop-shadow(0 0 36px rgba(163, 230, 53, 1)); }
+}
+.focus-time {
+  font-size: 34px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-main);
+  text-shadow: 0 0 22px rgba(163, 230, 53, 0.35);
+}
+.focus-task-name {
+  min-height: 16px;
+  margin-bottom: 12px;
+  font-size: 11.5px;
+  font-style: italic;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.focus-controls {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+.focus-controls .btn { flex: 1; }
+
+/* Recent focus-session history (inside the focus panel) */
+.focus-history {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--hairline);
+}
+.fh-head {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+}
+.fh-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 110px;
+  overflow-y: auto;
+}
+.fh-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 9px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--hairline);
+}
+.fh-item .fh-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fh-item .fh-min {
+  font-size: 10.5px;
+  font-weight: 800;
+  color: #bef264;
+  font-variant-numeric: tabular-nums;
+}
+.fh-item .fh-when {
+  font-size: 9.5px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.focus-start {
+  background: linear-gradient(135deg, rgba(163, 230, 53, 0.32), rgba(52, 211, 153, 0.18));
+  border-color: rgba(163, 230, 53, 0.55);
+}
+.focus-start:hover {
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4), 0 0 18px rgba(163, 230, 53, 0.45);
+}
+
+/* The ⏱ header button pulses while a session is running (its tooltip shows
+   the time remaining, updated live from renderFocusDisplay). */
+#focus-open.running {
+  background: rgba(163, 230, 53, 0.22);
+  border-color: rgba(163, 230, 53, 0.65);
+  animation: focusBtnPulse 1.6s ease-in-out infinite;
+}
+@keyframes focusBtnPulse {
+  0%, 100% { transform: translateY(-1px) scale(1); box-shadow: 0 0 10px rgba(163, 230, 53, 0.35); }
+  50% { transform: translateY(-1px) scale(1.12); box-shadow: 0 0 22px rgba(163, 230, 53, 0.75); }
+}
+
 /* === Clipboard Vault === */
 #clipboard-vault {
   position: absolute;
@@ -737,6 +981,107 @@ body.electron-mode #browser-launcher {
 .tp-btn:active { transform: scale(0.92); }
 .tp-btn-xs { width: 22px; height: 22px; border-radius: 7px; font-size: 13px; }
 
+/* === Top strip: daily progress + focus mini-bar (very top of the planner) === */
+.planner-top-strip {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px 6px;
+  border-bottom: 1px solid var(--hairline);
+  background: linear-gradient(180deg, rgba(99, 102, 241, 0.07), transparent);
+}
+
+/* Slim focus session bar: task name + live countdown, tucked under the top
+   strip while a session is running/paused. Clicking it opens the panel. */
+.focus-mini {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #f7fee7;
+  background: linear-gradient(135deg, rgba(163, 230, 53, 0.18), rgba(34, 211, 238, 0.12));
+  border: 1px solid rgba(163, 230, 53, 0.4);
+  box-shadow: 0 0 14px rgba(163, 230, 53, 0.18);
+  cursor: pointer;
+  transition: box-shadow 0.2s, transform 0.2s;
+}
+.focus-mini:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 0 22px rgba(163, 230, 53, 0.4);
+}
+.focus-mini-icon {
+  font-size: 12px;
+  animation: miniPulse 1.6s ease-in-out infinite;
+}
+@keyframes miniPulse {
+  0%, 100% { opacity: 0.75; }
+  50% { opacity: 1; text-shadow: 0 0 10px rgba(163, 230, 53, 0.9); }
+}
+.focus-mini-name {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.focus-mini-time {
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  font-weight: 800;
+  color: #d9f99d;
+}
+
+/* Daily progress: weighted by task duration + progress across today */
+.daily-progress-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.daily-progress-pct {
+  color: #bef264;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 12px rgba(163, 230, 53, 0.5);
+}
+.daily-progress-track {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+  margin-top: 4px;
+}
+.daily-progress-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #a3e635, #34d399, #22d3ee);
+  box-shadow: 0 0 14px rgba(163, 230, 53, 0.55);
+  transition: width 0.5s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+/* Slim sub-line: "Today · X of Yh done" under the daily bar */
+.daily-progress-sub {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 9px;
+  color: var(--text-dim);
+  margin-top: 3px;
+  letter-spacing: 0.03em;
+}
+.daily-progress-time {
+  font-variant-numeric: tabular-nums;
+  color: #d9f99d;
+  font-weight: 700;
+}
+
 /* Body: two halves split 50/50, each with its own slim scrollbar */
 .planner-body {
   flex: 1;
@@ -748,7 +1093,7 @@ body.electron-mode #browser-launcher {
 }
 
 .planner-half {
-  flex: 1 1 50%;
+  flex: 1 1 40%;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -756,6 +1101,12 @@ body.electron-mode #browser-launcher {
   border: 1px solid var(--hairline);
   border-radius: 14px;
   overflow: hidden;
+}
+
+/* Daily Tasks gets the bigger slice — it usually holds more items than the
+   deadline list, so give it 60% of the planner body instead of a 50/50 split. */
+.daily-half {
+  flex: 1 1 60%;
 }
 
 .section-head {
@@ -1083,6 +1434,67 @@ body.electron-mode #browser-launcher {
   transform: translateY(-1px);
 }
 
+/* Browser-preview hover card (Electron uses its own hover-card window to
+   the LEFT of the planner). Fixed overlay, anchored left of the row. */
+#row-hover-card {
+  position: fixed;
+  z-index: 999;
+  width: 292px;
+  padding: 12px 13px;
+  border-radius: 15px;
+  background:
+    linear-gradient(165deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.05) 38%, rgba(99, 102, 241, 0.10) 78%),
+    rgba(10, 15, 30, 0.94);
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55), 0 0 60px rgba(139, 92, 246, 0.25);
+  color: #e2e8f0;
+  font-size: 11.5px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-8px) scale(0.97);
+  transition: opacity 0.18s ease, transform 0.22s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+#row-hover-card.visible {
+  opacity: 1;
+  transform: translateX(0) scale(1);
+}
+#row-hover-card .rhc-title {
+  font-size: 14.5px;
+  font-weight: 800;
+  color: #f1f5f9;
+  margin-bottom: 6px;
+  overflow-wrap: anywhere;
+}
+#row-hover-card .rhc-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 12px;
+}
+#row-hover-card .rhc-grid .k {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+#row-hover-card .rhc-grid .v { font-weight: 700; color: #e2e8f0; }
+#row-hover-card .rhc-bar {
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+  margin-top: 8px;
+}
+#row-hover-card .rhc-bar i {
+  display: block;
+  height: 100%;
+  width: 0%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #a3e635, #34d399);
+}
+
 /* Round done-toggle - fills green and pops the check when completed */
 .item-check {
   position: relative;
@@ -1213,6 +1625,183 @@ body.electron-mode #browser-launcher {
 }
 .item-act:hover { background: var(--surface-btn-hover); color: var(--text-main); transform: scale(1.12); border-color: var(--hairline-strong); box-shadow: 0 0 10px rgba(99, 102, 241, 0.3); }
 .item-act.del:hover { background: rgba(244, 63, 94, 0.35); color: #fff; border-color: rgba(244, 63, 94, 0.6); }
+/* Per-task ▶ focus action — chip style matched to the ⊕ progress button
+   (emerald family so the pair reads as the task's time controls). */
+.item-act.focus {
+  color: #a7f3d0;
+  border-color: rgba(52, 211, 153, 0.45);
+  background: linear-gradient(135deg, rgba(52, 211, 153, 0.18), rgba(34, 211, 238, 0.10));
+  font-weight: 800;
+  font-size: 11px;
+  text-shadow: 0 0 8px rgba(52, 211, 153, 0.6);
+  transition: background 0.15s, border-color 0.15s, transform 0.15s, box-shadow 0.15s, filter 0.15s;
+}
+.item-act.focus:hover {
+  background: linear-gradient(135deg, rgba(52, 211, 153, 0.35), rgba(34, 211, 238, 0.22));
+  border-color: rgba(52, 211, 153, 0.9);
+  color: #ffffff;
+  transform: scale(1.15);
+  box-shadow: 0 0 16px rgba(52, 211, 153, 0.6), inset 0 0 8px rgba(52, 211, 153, 0.2);
+  filter: brightness(1.1);
+}
+.item-act.focus:active {
+  transform: scale(0.9);
+}
+/* Per-task ⊕ mark-progress action (lime accent) — opens the slider popover.
+   A filled, softly-glowing chip that clearly reads as "add progress". */
+.item-act.prog {
+  color: #d9f99d;
+  border-color: rgba(163, 230, 53, 0.45);
+  background: linear-gradient(135deg, rgba(163, 230, 53, 0.18), rgba(52, 211, 153, 0.10));
+  font-weight: 800;
+  font-size: 11.5px;
+  text-shadow: 0 0 8px rgba(163, 230, 53, 0.6);
+  transition: background 0.15s, border-color 0.15s, transform 0.15s, box-shadow 0.15s, filter 0.15s;
+}
+.item-act.prog:hover {
+  background: linear-gradient(135deg, rgba(163, 230, 53, 0.35), rgba(52, 211, 153, 0.22));
+  border-color: rgba(163, 230, 53, 0.9);
+  color: #ffffff;
+  transform: scale(1.15) rotate(90deg); /* the ⊕ spins into place */
+  box-shadow: 0 0 16px rgba(163, 230, 53, 0.65), inset 0 0 8px rgba(163, 230, 53, 0.2);
+  filter: brightness(1.1);
+}
+.item-act.prog:active {
+  transform: scale(0.9);
+}
+
+/* Task rows: the line stays on ONE row; a slim progress bar sits underneath
+   — visible enough to read the fill at a glance, but still a thin line. */
+.item-row.prog-row {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  padding: 4px 7px 6px;
+}
+.item-row-main {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+.item-progress {
+  position: relative;
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  overflow: hidden;
+  margin-top: 1px;
+}
+/* Tiny % readout pinned to the right end of the line (updated live). */
+.item-progress-pct {
+  position: absolute;
+  right: 0;
+  top: -9px;
+  font-size: 8.5px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  color: #bef264;
+  background: rgba(9, 14, 27, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 999px;
+  padding: 0 4px;
+  line-height: 11px;
+  text-shadow: 0 0 6px rgba(163, 230, 53, 0.5);
+  pointer-events: none;
+}
+.item-progress-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #a3e635, #34d399);
+  box-shadow: 0 0 8px rgba(163, 230, 53, 0.5);
+  transition: width 0.4s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+/* A touch of fill is always visible so the bar reads as a progress bar even
+   before any time is logged (the empty track alone is easy to miss). */
+.item-progress-fill::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  border-radius: 999px;
+  background: inherit;
+  opacity: 0.6;
+}
+
+/* === Mark-progress slider popover ===
+   Clicking a task's ▲ opens this small box next to the row: drag the slider
+   to set how much time is done, hit Save to commit. */
+#progress-popover {
+  position: fixed;
+  z-index: 400;
+  width: 210px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background:
+    linear-gradient(165deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.04) 40%, rgba(99, 102, 241, 0.10)),
+    rgba(9, 14, 27, 0.95);
+  backdrop-filter: blur(14px) saturate(1.4);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55), 0 0 40px rgba(163, 230, 53, 0.15);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-4px) scale(0.96);
+  transition: opacity 0.18s ease, transform 0.2s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+#progress-popover.visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+}
+.pp-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+}
+.pp-value {
+  color: #bef264;
+  font-variant-numeric: tabular-nums;
+}
+.pp-name {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 7px;
+}
+.pp-slider {
+  width: 100%;
+  accent-color: #a3e635;
+  cursor: pointer;
+}
+.pp-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 9.5px;
+  color: var(--text-dim);
+  margin-top: 4px;
+}
+.pp-btns {
+  display: flex;
+  gap: 6px;
+  margin-top: 9px;
+}
+.pp-btns .btn { flex: 1; padding: 5px 0; font-size: 11px; }
 
 /* === Quick Notes === */
 #notes-panel {
@@ -1653,6 +2242,17 @@ body.electron-mode #browser-launcher {
     0 0 32px rgba(244, 63, 94, 0.55),
     inset 0 1px 0 rgba(255, 255, 255, 0.24);
   color: #fff1f2;
+  font-weight: 700;
+}
+/* Focus-complete toast: emerald glow. */
+.toast.toast-focus {
+  border-color: rgba(163, 230, 53, 0.6);
+  background: linear-gradient(165deg, rgba(163, 230, 53, 0.2), rgba(9, 14, 27, 0.85) 45%);
+  box-shadow:
+    0 10px 34px rgba(0, 0, 0, 0.5),
+    0 0 26px rgba(163, 230, 53, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  color: #f7fee7;
   font-weight: 700;
 }
 
