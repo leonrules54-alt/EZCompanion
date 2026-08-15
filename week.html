@@ -27,15 +27,15 @@
     display: flex;
     flex-direction: column;
     border-radius: 18px;
-    background:
-      linear-gradient(165deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.03) 36%, rgba(9, 14, 27, 0.45) 100%),
-      rgba(9, 14, 27, 0.85);
+    background: rgba(9, 14, 27, 0.85);
     backdrop-filter: blur(16px) saturate(1.35) brightness(1.05);
     -webkit-backdrop-filter: blur(16px) saturate(1.35) brightness(1.05);
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    border-top: 1px solid rgba(255, 255, 255, 0.28);
+    border: 2px solid rgba(167, 139, 250, 0.45);
+    border-top: 1.5px solid rgba(255, 255, 255, 0.5);
     box-shadow:
       0 14px 48px rgba(0, 0, 0, 0.5),
+      0 0 0 1.5px rgba(167, 139, 250, 0.28),
+      0 0 24px rgba(139, 92, 246, 0.18),
       inset 0 1px 0 rgba(255, 255, 255, 0.16);
     overflow: hidden;
   }
@@ -56,7 +56,7 @@
     align-items: center;
     gap: 10px;
     padding: 10px 14px 8px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    border-bottom: 1.5px solid rgba(167, 139, 250, 0.6);
     flex-shrink: 0;
   }
   .wk-brand {
@@ -71,7 +71,7 @@
     min-width: 26px;
     padding: 0 8px;
     border-radius: 9px;
-    border: 1px solid rgba(255, 255, 255, 0.16);
+    border: 1.5px solid rgba(255, 255, 255, 0.3);
     background: rgba(255, 255, 255, 0.08);
     color: #dbe4ff;
     font-family: inherit;
@@ -93,13 +93,13 @@
   /* The currently-active view mode reads as a glowing pill. Scoped under
      .wk-actions so it outranks the light-theme .wk-btn overrides below. */
   .wk-actions .wk-btn.active {
-    background: linear-gradient(135deg, rgba(34, 211, 238, 0.45), rgba(139, 92, 246, 0.55));
+    background: rgba(139, 92, 246, 0.75);
     border-color: rgba(167, 139, 250, 0.75);
     color: #fff;
     box-shadow: 0 0 12px rgba(139, 92, 246, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.25);
   }
   .wk-actions .wk-btn.active:hover {
-    background: linear-gradient(135deg, rgba(34, 211, 238, 0.6), rgba(139, 92, 246, 0.7));
+    background: rgba(139, 92, 246, 0.9);
     color: #fff;
   }
 
@@ -122,7 +122,7 @@
     display: flex;
     flex-direction: column;
     border-radius: 13px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1.5px solid rgba(255, 255, 255, 0.16);
     background: rgba(255, 255, 255, 0.07);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
     padding: 7px 9px;
@@ -137,8 +137,8 @@
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 6px 18px rgba(0, 0, 0, 0.28), 0 0 16px rgba(99, 102, 241, 0.22);
   }
   .wk-day.today {
-    border-color: rgba(34, 211, 238, 0.6);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 0 0 1px rgba(34, 211, 238, 0.35), 0 0 18px rgba(34, 211, 238, 0.25);
+    border-color: rgba(34, 211, 238, 0.8);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 0 0 1.5px rgba(34, 211, 238, 0.5), 0 0 18px rgba(34, 211, 238, 0.35);
   }
   /* Days before today: dashed border + muted header mark them as history,
      but the crossed-out items inside stay fully legible. */
@@ -159,7 +159,7 @@
     justify-content: space-between;
     gap: 6px;
     padding-bottom: 6px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    border-bottom: 1px solid rgba(167, 139, 250, 0.45);
     margin-bottom: 6px;
     flex-shrink: 0;
   }
@@ -168,7 +168,7 @@
     font-weight: 800;
     letter-spacing: 0.14em;
     text-transform: uppercase;
-    color: rgba(199, 210, 254, 0.75);
+    color: rgba(199, 210, 254, 0.95);
   }
   .wk-day.today .wk-dow { color: #67e8f9; }
   .wk-num {
@@ -196,14 +196,15 @@
     line-height: 1.25;
     padding: 4px 6px;
     border-radius: 8px;
-    background: rgba(255, 255, 255, 0.1);
-    border: 1px solid rgba(255, 255, 255, 0.07);
+    /* Soft diagonal cyan → violet → pink tint so the items aren't flat */
+    background: rgba(255, 255, 255, 0.08);
+    border: 1.5px solid rgba(255, 255, 255, 0.14);
     white-space: nowrap;
     overflow: hidden;
   }
   .wk-item b { font-weight: 700; overflow: hidden; text-overflow: ellipsis; }
-  .wk-item.dl { border-left: 2.5px solid #f87171; }
-  .wk-item.tk { border-left: 2.5px solid #34d399; }
+  .wk-item.dl { border-left: 3.5px solid #f87171; }
+  .wk-item.tk { border-left: 3.5px solid #34d399; }
   /* Crossed-out items (completed, or on a day that already passed): the
      strike-through stays bold and the category/deadline colour stays vivid. */
   .wk-item.done { text-decoration: line-through; text-decoration-thickness: 1.5px; }
@@ -220,65 +221,35 @@
     font-style: italic;
   }
 
-  /* === Follow the app theme palette (body[data-theme] set below) === */
-  body[data-theme="white"] #week,
-  body[data-theme="light-blue"] #week,
-  body[data-theme="pink"] #week,
-  body[data-theme="purple"] #week {
-    background: linear-gradient(165deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.92) 40%, rgba(226, 232, 240, 0.95) 100%);
-    border-color: rgba(15, 23, 42, 0.16);
-    border-top-color: rgba(255, 255, 255, 0.95);
-    color: #0f172a;
-    box-shadow: 0 14px 48px rgba(15, 23, 42, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.95);
+  /* Clean glass tooltip (replaces the native title bubble) */
+  .mini-tip {
+    position: fixed;
+    z-index: 50;
+    max-width: 220px;
+    padding: 6px 10px;
+    border-radius: 9px;
+    background: rgba(15, 23, 42, 0.96);
+    border: 1.5px solid rgba(255, 255, 255, 0.28);
+    border-top: 1px solid rgba(255, 255, 255, 0.45);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    color: #e8edff;
+    font-family: 'Comfortaa', 'Segoe UI', system-ui, sans-serif;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.35;
+    letter-spacing: 0.01em;
+    text-align: center;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(4px);
+    transition: opacity 0.16s ease, transform 0.16s ease;
   }
-  body[data-theme="white"] .wk-brand em,
-  body[data-theme="light-blue"] .wk-brand em,
-  body[data-theme="pink"] .wk-brand em,
-  body[data-theme="purple"] .wk-brand em { color: #475569; }
-  body[data-theme="white"] .wk-btn,
-  body[data-theme="light-blue"] .wk-btn,
-  body[data-theme="pink"] .wk-btn,
-  body[data-theme="purple"] .wk-btn { background: rgba(15, 23, 42, 0.07); border-color: rgba(15, 23, 42, 0.18); color: #334155; }
-  body[data-theme="white"] .wk-btn:hover,
-  body[data-theme="light-blue"] .wk-btn:hover,
-  body[data-theme="pink"] .wk-btn:hover,
-  body[data-theme="purple"] .wk-btn:hover { background: rgba(15, 23, 42, 0.16); color: #0f172a; }
-  body[data-theme="white"] .wk-day,
-  body[data-theme="light-blue"] .wk-day,
-  body[data-theme="pink"] .wk-day,
-  body[data-theme="purple"] .wk-day { background: rgba(15, 23, 42, 0.05); border-color: rgba(15, 23, 42, 0.12); }
-  body[data-theme="white"] .wk-day.past,
-  body[data-theme="light-blue"] .wk-day.past,
-  body[data-theme="pink"] .wk-day.past,
-  body[data-theme="purple"] .wk-day.past { background: rgba(15, 23, 42, 0.03); border-color: rgba(15, 23, 42, 0.14); }
-  body[data-theme="white"] .wk-day:hover,
-  body[data-theme="light-blue"] .wk-day:hover,
-  body[data-theme="pink"] .wk-day:hover,
-  body[data-theme="purple"] .wk-day:hover { background: rgba(15, 23, 42, 0.1); border-color: rgba(15, 23, 42, 0.24); }
-  body[data-theme="white"] .wk-dow,
-  body[data-theme="light-blue"] .wk-dow,
-  body[data-theme="pink"] .wk-dow,
-  body[data-theme="purple"] .wk-dow { color: #64748b; }
-  body[data-theme="white"] .wk-item,
-  body[data-theme="light-blue"] .wk-item,
-  body[data-theme="pink"] .wk-item,
-  body[data-theme="purple"] .wk-item { background: rgba(255, 255, 255, 0.65); border-color: rgba(15, 23, 42, 0.08); }
-  body[data-theme="white"] .wk-empty,
-  body[data-theme="light-blue"] .wk-empty,
-  body[data-theme="pink"] .wk-empty,
-  body[data-theme="purple"] .wk-empty { color: #64748b; }
-  /* Colored themes tint the strip's glass */
-  body[data-theme="black"] #week { background: linear-gradient(165deg, rgba(25, 25, 25, 0.9), rgba(0, 0, 0, 0.93) 100%); }
-  body[data-theme="dark-blue"] #week { background: linear-gradient(165deg, rgba(37, 99, 235, 0.85), rgba(23, 37, 84, 0.9) 60%, rgba(15, 23, 42, 0.92) 100%); }
-  body[data-theme="green"] #week { background: linear-gradient(165deg, rgba(16, 185, 129, 0.85), rgba(6, 95, 70, 0.9) 60%, rgba(4, 60, 44, 0.92) 100%); }
-  body[data-theme="red"] #week { background: linear-gradient(165deg, rgba(239, 68, 68, 0.85), rgba(153, 27, 27, 0.9) 60%, rgba(69, 10, 10, 0.92) 100%); }
-  body[data-theme="pink"] #week { background: linear-gradient(165deg, rgba(254, 205, 211, 0.95), rgba(236, 72, 153, 0.85) 60%, rgba(190, 24, 93, 0.9) 100%); }
-  body[data-theme="purple"] #week { background: linear-gradient(165deg, rgba(237, 233, 254, 0.95), rgba(139, 92, 246, 0.85) 60%, rgba(76, 29, 149, 0.9) 100%); }
-  body[data-theme="light-blue"] #week { background: linear-gradient(165deg, rgba(219, 234, 254, 0.95), rgba(56, 189, 248, 0.85) 60%, rgba(14, 116, 221, 0.9) 100%); }
+  .mini-tip.visible { opacity: 1; transform: translateY(0); }
+
 </style>
 <script>
-  // Follow the app's theme palette (chosen in the planner, persisted in 'wolf-theme').
-  try { document.body.dataset.theme = localStorage.getItem('wolf-theme') || ''; } catch (e) {}
+  // The app ships with a single signature look: the black glass theme.
+  document.body.dataset.theme = 'black';
 </script>
 </head>
 <body>
@@ -300,6 +271,50 @@
     const api = window.electronAPI || {
       setMode() {}, weekDayClick() {}, updateWeekBounds() {},
     };
+
+    // === Clean glass tooltips (replaces native title bubbles) ===
+    const tipEl = document.createElement('div');
+    tipEl.className = 'mini-tip';
+    document.body.appendChild(tipEl);
+    let tipTimer = null;
+    function tipFor(el, text) {
+      if (tipTimer) clearTimeout(tipTimer);
+      tipTimer = setTimeout(() => {
+        tipEl.textContent = text;
+        const r = el.getBoundingClientRect();
+        const w = Math.min(220, tipEl.offsetWidth || 120);
+        const h = tipEl.offsetHeight || 26;
+        const cw = document.documentElement.clientWidth;
+        const ch = document.documentElement.clientHeight;
+        let left = r.left + r.width / 2 - w / 2;
+        left = Math.max(4, Math.min(left, cw - w - 4));
+        const top = r.top > 70 ? r.top - h - 10 : r.bottom + 10;
+        tipEl.style.left = left + 'px';
+        tipEl.style.top = Math.max(4, Math.min(top, ch - h - 4)) + 'px';
+        tipEl.classList.add('visible');
+      }, 160);
+    }
+    function tipHide() {
+      if (tipTimer) { clearTimeout(tipTimer); tipTimer = null; }
+      tipEl.classList.remove('visible');
+    }
+    document.addEventListener('mouseover', (e) => {
+      const el = e.target.closest('[title],[data-tip]');
+      if (!el) return tipHide();
+      let text = el.dataset.tip;
+      if (text == null) {
+        text = el.getAttribute('title') || '';
+        if (!text) return tipHide();
+        el.setAttribute('data-tip', text);
+        el.removeAttribute('title');
+      }
+      tipFor(el, text);
+    });
+    document.addEventListener('mouseout', (e) => {
+      const from = e.target.closest && e.target.closest('[title],[data-tip]');
+      const to = e.relatedTarget && e.relatedTarget.closest ? e.relatedTarget.closest('[title],[data-tip]') : null;
+      if (from && from !== to) tipHide();
+    });
 
     const DAY_NAMES = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
     const pad2 = (n) => String(n).padStart(2, '0');

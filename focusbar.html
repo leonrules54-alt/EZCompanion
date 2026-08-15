@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>EZCompanion Focus</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { background: transparent; overflow: hidden; }
+  body {
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    font-family: 'Comfortaa', 'Segoe UI', system-ui, sans-serif;
+    user-select: none;
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+    color: #e8edff;
+  }
+  /* Slim focus bar: the planner unsummons into this while a session runs. */
+  #fbar {
+    position: relative;
+    flex: 1;
+    margin: 6px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 12px;
+    border-radius: 16px;
+    background: rgba(9, 14, 27, 0.88);
+    backdrop-filter: blur(14px) saturate(1.3) brightness(1.05);
+    -webkit-backdrop-filter: blur(14px) saturate(1.3) brightness(1.05);
+    border: 2px solid rgba(167, 139, 250, 0.45);
+    border-top: 1.5px solid rgba(255, 255, 255, 0.5);
+    box-shadow:
+      0 10px 34px rgba(0, 0, 0, 0.5),
+      0 0 30px rgba(163, 230, 53, 0.22),
+      0 0 0 1.5px rgba(167, 139, 250, 0.28),
+      0 0 22px rgba(139, 92, 246, 0.16),
+      inset 0 1px 0 rgba(255, 255, 255, 0.16);
+    overflow: hidden;
+  }
+  /* LED strip along the top edge — lime while ticking, amber when paused */
+  #fbar::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background: linear-gradient(90deg, #a3e635, #34d399 55%, #22d3ee);
+    -webkit-mask: linear-gradient(180deg, #000 0 3px, transparent 3px 100%);
+    mask: linear-gradient(180deg, #000 0 3px, transparent 3px 100%);
+    opacity: 0.95;
+    transition: background 0.4s ease;
+  }
+  body.paused #fbar::before { background: linear-gradient(90deg, #fbbf24, #f59e0b 55%, #f472b6); }
+
+  /* Pulsing timer icon */
+  .fb-icon {
+    font-size: 20px;
+    flex-shrink: 0;
+    animation: fbPulse 1.6s ease-in-out infinite;
+    filter: drop-shadow(0 0 8px rgba(163, 230, 53, 0.7));
+  }
+  body.paused .fb-icon { animation: none; filter: drop-shadow(0 0 8px rgba(251, 191, 36, 0.7)); }
+  @keyframes fbPulse {
+    0%, 100% { transform: scale(1); opacity: 0.85; }
+    50% { transform: scale(1.12); opacity: 1; }
+  }
+
+  /* Task name + due date */
+  .fb-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+  .fb-name {
+    font-size: 12.5px;
+    font-weight: 800;
+    letter-spacing: 0.01em;
+    color: #f1f5f9;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-shadow: 0 0 14px rgba(99, 102, 241, 0.3);
+  }
+  .fb-date {
+    font-size: 10px;
+    font-weight: 700;
+    color: #bbf7d0;
+    text-shadow: 0 0 10px rgba(52, 211, 153, 0.4);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  body.paused .fb-date { color: #fde68a; }
+
+  /* The ticking countdown */
+  .fb-time {
+    flex-shrink: 0;
+    font-size: 24px;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.02em;
+    color: #ecfdf5;
+    text-shadow: 0 0 18px rgba(163, 230, 53, 0.45);
+    transition: color 0.3s ease;
+  }
+  body.paused .fb-time { color: #fffbeb; text-shadow: 0 0 18px rgba(251, 191, 36, 0.5); }
+
+  /* Controls */
+  .fb-btn {
+    flex-shrink: 0;
+    width: 30px;
+    height: 30px;
+    border-radius: 10px;
+    border: 1.5px solid rgba(255, 255, 255, 0.32);
+    background: rgba(255, 255, 255, 0.1);
+    color: #e8edff;
+    font-family: inherit;
+    font-size: 12px;
+    line-height: 1;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+  }
+  .fb-btn:hover {
+    background: rgba(255, 255, 255, 0.26);
+    border-color: rgba(255, 255, 255, 0.5);
+    transform: scale(1.1);
+  }
+  .fb-btn:active { transform: scale(0.92); }
+  .fb-btn.pause {
+    border-color: rgba(163, 230, 53, 0.5);
+    background: rgba(163, 230, 53, 0.18);
+    color: #d9f99d;
+  }
+  .fb-btn.pause:hover { box-shadow: 0 0 14px rgba(163, 230, 53, 0.5); }
+  body.paused .fb-btn.pause {
+    border-color: rgba(251, 191, 36, 0.55);
+    background: rgba(251, 191, 36, 0.2);
+    color: #fde68a;
+  }
+  .fb-btn.stop:hover {
+    background: rgba(244, 63, 94, 0.32);
+    border-color: rgba(244, 63, 94, 0.65);
+    box-shadow: 0 0 14px rgba(244, 63, 94, 0.4);
+  }
+
+  /* Clean glass tooltip */
+  .mini-tip {
+    position: fixed;
+    z-index: 50;
+    max-width: 220px;
+    padding: 6px 10px;
+    border-radius: 9px;
+    background: rgba(15, 23, 42, 0.96);
+    border: 1.5px solid rgba(255, 255, 255, 0.28);
+    border-top: 1px solid rgba(255, 255, 255, 0.45);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    color: #e8edff;
+    font-family: 'Comfortaa', 'Segoe UI', system-ui, sans-serif;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.35;
+    text-align: center;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(4px);
+    transition: opacity 0.16s ease, transform 0.16s ease;
+  }
+  .mini-tip.visible { opacity: 1; transform: translateY(0); }
+
+</style>
+<script>
+  // The app ships with a single signature look: the black glass theme.
+  document.body.dataset.theme = 'black';
+</script>
+</head>
+<body>
+  <div id="fbar">
+    <span class="fb-icon">⏱</span>
+    <div class="fb-info">
+      <div class="fb-name" id="fb-name">Focusing…</div>
+      <div class="fb-date" id="fb-date">📅 No date</div>
+    </div>
+    <div class="fb-time" id="fb-time">00:00</div>
+    <button class="fb-btn pause" id="fb-pause" title="Pause">❚❚</button>
+    <button class="fb-btn stop" id="fb-stop" title="Stop &amp; back to planner">✕</button>
+  </div>
+  <script>
+    const api = window.electronAPI || { onFocusBarState() {}, focusBarCmd() {} };
+
+    const nameEl = document.getElementById('fb-name');
+    const dateEl = document.getElementById('fb-date');
+    const timeEl = document.getElementById('fb-time');
+    const pauseBtn = document.getElementById('fb-pause');
+    const stopBtn = document.getElementById('fb-stop');
+
+    function fmt(sec) {
+      sec = Math.max(0, Math.round(sec));
+      const h = Math.floor(sec / 3600);
+      const m = Math.floor((sec % 3600) / 60);
+      const s = sec % 60;
+      const p = (n) => String(n).padStart(2, '0');
+      return h > 0 ? h + ':' + p(m) + ':' + p(s) : p(m) + ':' + p(s);
+    }
+
+    let running = false;
+    api.onFocusBarState((s) => {
+      running = !!(s && s.running);
+      document.body.classList.toggle('paused', !running);
+      if (s) {
+        if (s.name) nameEl.textContent = s.name;
+        dateEl.textContent = '📅 ' + (s.date || 'No date');
+        timeEl.textContent = fmt(s.remaining);
+      }
+      pauseBtn.textContent = running ? '❚❚' : '▶';
+      pauseBtn.title = running ? 'Pause' : 'Resume';
+    });
+
+    pauseBtn.addEventListener('click', () => api.focusBarCmd(running ? 'pause' : 'resume'));
+    stopBtn.addEventListener('click', () => api.focusBarCmd('stop'));
+
+    // === Clean glass tooltips (replaces native title bubbles) ===
+    const tipEl = document.createElement('div');
+    tipEl.className = 'mini-tip';
+    document.body.appendChild(tipEl);
+    let tipTimer = null;
+    function tipFor(el, text) {
+      if (tipTimer) clearTimeout(tipTimer);
+      tipTimer = setTimeout(() => {
+        tipEl.textContent = text;
+        const r = el.getBoundingClientRect();
+        const w = Math.min(220, tipEl.offsetWidth || 120);
+        const h = tipEl.offsetHeight || 26;
+        const cw = document.documentElement.clientWidth;
+        const ch = document.documentElement.clientHeight;
+        let left = r.left + r.width / 2 - w / 2;
+        left = Math.max(4, Math.min(left, cw - w - 4));
+        const top = r.top > 70 ? r.top - h - 10 : r.bottom + 10;
+        tipEl.style.left = left + 'px';
+        tipEl.style.top = Math.max(4, Math.min(top, ch - h - 4)) + 'px';
+        tipEl.classList.add('visible');
+      }, 160);
+    }
+    function tipHide() {
+      if (tipTimer) { clearTimeout(tipTimer); tipTimer = null; }
+      tipEl.classList.remove('visible');
+    }
+    document.addEventListener('mouseover', (e) => {
+      const el = e.target.closest('[title],[data-tip]');
+      if (!el) return tipHide();
+      let text = el.dataset.tip;
+      if (text == null) {
+        text = el.getAttribute('title') || '';
+        if (!text) return tipHide();
+        el.setAttribute('data-tip', text);
+        el.removeAttribute('title');
+      }
+      tipFor(el, text);
+    });
+    document.addEventListener('mouseout', (e) => {
+      const from = e.target.closest && e.target.closest('[title],[data-tip]');
+      const to = e.relatedTarget && e.relatedTarget.closest ? e.relatedTarget.closest('[title],[data-tip]') : null;
+      if (from && from !== to) tipHide();
+    });
+  </script>
+</body>
+</html>

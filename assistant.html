@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<title>Assistant</title>
+<style>
+  :root {
+    --glass-bg: rgba(13, 19, 34, 0.82);
+    --text-main: #f5f5f5;
+    --text-dim: #9ca3af;
+    --hairline: rgba(148, 163, 255, 0.55);
+    --hairline-strong: rgba(167, 139, 250, 0.95);
+    --surface-panel: rgba(255, 255, 255, 0.12);
+    --surface-input: rgba(255, 255, 255, 0.16);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    height: 100%;
+    background: transparent;
+    overflow: hidden;
+    font-family: 'Comfortaa', 'Segoe UI', system-ui, sans-serif;
+    color: var(--text-main);
+    user-select: none;
+  }
+
+  #assistant-glass {
+    position: absolute;
+    inset: 8px;
+    display: flex;
+    flex-direction: column;
+    border-radius: 18px;
+    background: var(--glass-bg);
+    backdrop-filter: blur(16px) saturate(1.3) brightness(1.05);
+    -webkit-backdrop-filter: blur(16px) saturate(1.3) brightness(1.05);
+    border: 2px solid rgba(167, 139, 250, 0.45);
+    border-top: 1.5px solid rgba(255, 255, 255, 0.5);
+    box-shadow:
+      0 14px 48px rgba(0, 0, 0, 0.5),
+      0 0 0 1.5px rgba(167, 139, 250, 0.28),
+      0 0 26px rgba(139, 92, 246, 0.18),
+      inset 0 1px 0 rgba(255, 255, 255, 0.16);
+    overflow: hidden;
+  }
+
+  /* Header */
+  .head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 13px 14px 11px;
+    border-bottom: 1.5px solid rgba(167, 139, 250, 0.6);
+    flex-shrink: 0;
+  }
+  .head .title {
+    flex: 1;
+    font-size: 14px;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+  }
+  .head .title em {
+    font-style: normal;
+    color: var(--text-dim);
+    font-weight: 600;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-left: 8px;
+  }
+  .close {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    border: 1.5px solid rgba(255, 255, 255, 0.3);
+    background: rgba(255, 255, 255, 0.09);
+    color: var(--text-dim);
+    font-size: 11px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, color 0.15s;
+  }
+  .close:hover { background: rgba(244, 63, 94, 0.75); color: #fff; }
+
+  /* Messages */
+  .msgs {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    padding: 12px 12px 8px;
+  }
+  .msg {
+    max-width: 92%;
+    padding: 8px 11px;
+    border-radius: 13px;
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .msg.bot {
+    align-self: flex-start;
+    background: var(--surface-panel);
+    border: 1.5px solid var(--hairline);
+    border-bottom-left-radius: 4px;
+  }
+  .msg.user {
+    align-self: flex-end;
+    background: rgba(139, 92, 246, 0.28);
+    border: 1.5px solid rgba(167, 139, 250, 0.5);
+    border-bottom-right-radius: 4px;
+    color: #f5f3ff;
+  }
+
+  /* Clipboard / screenshot cards */
+  .c-item {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 7px 10px;
+    border-radius: 11px;
+    background: rgba(255, 255, 255, 0.09);
+    border: 1.5px solid var(--hairline);
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+  }
+  .c-item:hover {
+    background: rgba(99, 102, 241, 0.24);
+    border-color: rgba(167, 139, 250, 0.8);
+    box-shadow: 0 0 12px rgba(99, 102, 241, 0.28);
+    transform: translateX(2px);
+  }
+  .c-item.copied {
+    border-color: #34d399;
+    box-shadow: 0 0 14px rgba(52, 211, 153, 0.4);
+  }
+  .c-text {
+    flex: 1;
+    min-width: 0;
+    font-size: 11px;
+    color: var(--text-main);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .c-thumb {
+    width: 58px;
+    height: 40px;
+    object-fit: cover;
+    border-radius: 8px;
+    border: 1.5px solid var(--hairline);
+    background: rgba(255, 255, 255, 0.05);
+    flex-shrink: 0;
+  }
+  .c-time {
+    font-size: 9.5px;
+    color: var(--text-dim);
+    flex-shrink: 0;
+  }
+  .c-empty {
+    align-self: flex-start;
+    font-size: 11.5px;
+    color: var(--text-dim);
+    font-style: italic;
+    padding: 4px 2px;
+  }
+
+  /* Chips + input */
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    padding: 0 12px 8px;
+    flex-shrink: 0;
+  }
+  .chips .chip {
+    font-family: inherit;
+    font-size: 10px;
+    font-weight: 700;
+    color: #c7d2fe;
+    background: rgba(99, 102, 241, 0.16);
+    border: 1.5px solid rgba(148, 163, 255, 0.4);
+    border-radius: 999px;
+    padding: 4px 9px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+  }
+  .chips .chip:hover {
+    background: rgba(99, 102, 241, 0.32);
+    border-color: rgba(167, 139, 250, 0.85);
+    box-shadow: 0 0 10px rgba(139, 92, 246, 0.3);
+  }
+  .input-row {
+    display: flex;
+    gap: 7px;
+    padding: 0 12px 12px;
+    flex-shrink: 0;
+  }
+  #asst-input {
+    flex: 1;
+    min-width: 0;
+    font-family: inherit;
+    font-size: 12px;
+    color: var(--text-main);
+    background: var(--surface-input);
+    border: 1.5px solid var(--hairline-strong);
+    border-radius: 11px;
+    padding: 9px 11px;
+    outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  #asst-input:focus {
+    border-color: rgba(167, 139, 250, 0.9);
+    box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.25);
+  }
+  #asst-send {
+    flex-shrink: 0;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 800;
+    color: #06121a;
+    background: #22d3ee;
+    border: none;
+    border-radius: 11px;
+    padding: 0 15px;
+    cursor: pointer;
+    box-shadow: 0 4px 14px rgba(139, 92, 246, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.55);
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+  #asst-send:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(139, 92, 246, 0.5); }
+  #asst-send:active { transform: scale(0.95); }
+</style>
+</head>
+<body data-theme="black">
+  <div id="assistant-glass">
+    <div class="head">
+      <span class="title">🗨️ Assistant<em>manages your day</em></span>
+      <button class="close" id="asst-close" title="Close (or click outside)">✕</button>
+    </div>
+    <div class="msgs" id="asst-msgs"></div>
+    <div class="chips" id="asst-chips">
+      <button class="chip" data-q="what's due today?">📅 Due today</button>
+      <button class="chip" data-q="list my tasks">🗒️ Tasks</button>
+      <button class="chip" data-q="show clipboard">📋 Clipboard</button>
+      <button class="chip" data-q="show screenshots">🖼️ Screenshots</button>
+      <button class="chip" data-q="remind me in 30 minutes to take a break">⏰ Remind</button>
+      <button class="chip" data-q="help">🆘 Help</button>
+    </div>
+    <div class="input-row">
+      <input id="asst-input" autocomplete="off" spellcheck="false"
+             placeholder="e.g. “I have a test next Thursday at 2pm” · “complete the report for 35 mins” · “show screenshots”">
+      <button id="asst-send" title="Send">➤</button>
+    </div>
+  </div>
+
+  <script>
+    // Defensive shim: without the preload bridge (plain browser) the window
+    // can't reach the planner — it just stays inert.
+    const api = window.electronAPI || {
+      onAssistantReply() {}, sendAssistantMessage() {},
+      getClipboardHistory: () => Promise.resolve([]),
+      getClipboardImage: () => Promise.resolve(''),
+      writeClipboard: () => Promise.resolve(true),
+      writeClipboardImage: () => Promise.resolve(false),
+      closeAssistant() {},
+    };
+
+    const msgs = document.getElementById('asst-msgs');
+    const input = document.getElementById('asst-input');
+
+    function say(text, who) {
+      const b = document.createElement('div');
+      b.className = 'msg ' + (who === 'user' ? 'user' : 'bot');
+      b.textContent = text;
+      msgs.appendChild(b);
+      msgs.scrollTop = msgs.scrollHeight;
+    }
+
+    function send() {
+      const v = input.value.trim();
+      if (!v) return;
+      input.value = '';
+      say(v, 'user');
+      api.sendAssistantMessage(v);
+    }
+
+    // Clipboard / screenshot cards — click to copy back.
+    function cardWrap(rows) {
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'display:flex;flex-direction:column;gap:6px;align-self:stretch;';
+      rows.forEach(r => wrap.appendChild(r));
+      msgs.appendChild(wrap);
+      msgs.scrollTop = msgs.scrollHeight;
+    }
+    function flash(el) {
+      el.classList.add('copied');
+      setTimeout(() => el.classList.remove('copied'), 700);
+    }
+    function timeAgo(ts) {
+      if (!ts) return '';
+      const s = Math.floor((Date.now() - ts) / 1000);
+      if (s < 60) return 'now';
+      const m = Math.floor(s / 60);
+      if (m < 60) return m + 'm';
+      const h = Math.floor(m / 60);
+      if (h < 24) return h + 'h';
+      return Math.floor(h / 24) + 'd';
+    }
+    async function renderClipboard(filter) {
+      const items = (await api.getClipboardHistory()) || [];
+      const shown = filter ? items.filter(i => i.type === 'image') : items;
+      if (!shown.length) {
+        say(filter ? 'No screenshots or images in your clipboard history yet — take a screenshot or copy an image and I\'ll keep it.' : 'Nothing copied yet — copy something and it\'ll show up here.');
+        return;
+      }
+      const rows = shown.slice(0, 12).map((item) => {
+        const row = document.createElement('div');
+        row.className = 'c-item';
+        const meta = document.createElement('span');
+        meta.className = 'c-time';
+        meta.textContent = timeAgo(item.time);
+        if (item.type === 'image') {
+          const img = document.createElement('img');
+          img.className = 'c-thumb';
+          img.alt = 'Screenshot';
+          api.getClipboardImage(item.hash).then((url) => { if (url) img.src = url; });
+          row.append(img, meta);
+          row.addEventListener('click', () => {
+            api.writeClipboardImage(item.hash).then((ok) => { if (ok) flash(row); });
+          });
+        } else {
+          const t = document.createElement('span');
+          t.className = 'c-text';
+          t.textContent = item.text;
+          t.title = item.text;
+          row.append(t, meta);
+          row.addEventListener('click', () => {
+            api.writeClipboard(item.text).then(() => flash(row));
+          });
+        }
+        return row;
+      });
+      cardWrap(rows);
+    }
+
+    api.onAssistantReply((reply) => {
+      if (reply && reply.kind === 'clipboard') {
+        say(reply.text);
+        renderClipboard(reply.filter || null);
+      } else {
+        say(typeof reply === 'string' ? reply : (reply && reply.text) || '');
+      }
+    });
+
+    // Boot greeting
+    say('Hi! I manage your day — tasks, deadlines, reminders and your clipboard. Just tell me things like:\n• "I have a test next Thursday at 2pm"\n• "add task write report for 2h by Friday 3pm"\n• "completed the report for 35 mins"\n• "show screenshots" · "what\'s due today?"');
+
+    document.getElementById('asst-close').addEventListener('click', () => api.closeAssistant());
+    document.getElementById('asst-send').addEventListener('click', send);
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') send(); });
+    document.getElementById('asst-chips').addEventListener('click', (e) => {
+      const chip = e.target.closest('.chip');
+      if (!chip) return;
+      input.value = chip.dataset.q || '';
+      send();
+    });
+    setTimeout(() => input.focus(), 80);
+  </script>
+</body>
+</html>

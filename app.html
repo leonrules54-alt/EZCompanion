@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=15">
 </head>
 <body>
 
@@ -16,11 +16,8 @@
 
     <!-- Browser-only launcher button: in Electron the floating launcher
          window (button.html) provides this menu instead, so this button and
-         the ring menu below are hidden there. Resting on it ~2.5s opens the
-         ring (same hover-arm as the Electron launcher). -->
-    <span class="browser-arm-ring" id="browser-arm-ring"></span>
-    <button id="browser-launcher" class="browser-launcher" title="Hold to open menu">✦</button>
-    <span class="browser-arm-timer" id="browser-arm-timer"></span>
+         the ring menu below are hidden there. Clicking it opens the ring. -->
+    <button id="browser-launcher" class="browser-launcher" title="Open menu">✦</button>
 
     <!-- Futuristic segmented Glass Ring Menu (browser preview only — opens
          around the launcher button; hidden in Electron where button.html
@@ -59,6 +56,29 @@
         <div class="vault-title">📋 Clipboard History</div>
         <div class="vault-list" id="vault-list"></div>
         <button class="btn btn-ghost btn-block" id="vault-clear">Clear history</button>
+      </div>
+    </div>
+
+    <!-- === Assistant (chat that manages your day — add/complete/delete
+         tasks, reminders, and answers about what's due) === -->
+    <div id="assistant-panel" class="popup-hidden">
+      <div class="popup-glass assistant-glass">
+        <button class="popup-close" id="assistant-close">✕</button>
+        <div class="assistant-title">🗨️ Assistant</div>
+        <div class="assistant-msgs" id="assistant-msgs"></div>
+        <div class="assistant-chips" id="assistant-chips">
+          <button class="chip" data-q="what's due today?">📅 Due today</button>
+          <button class="chip" data-q="list my tasks">🗒️ My tasks</button>
+          <button class="chip" data-q="show clipboard">📋 Clipboard</button>
+          <button class="chip" data-q="show screenshots">🖼️ Screenshots</button>
+          <button class="chip" data-q="remind me in 30 minutes to take a break">⏰ Remind</button>
+          <button class="chip" data-q="help">🆘 Help</button>
+        </div>
+        <div class="assistant-input-row">
+          <input id="assistant-input" autocomplete="off" spellcheck="false"
+                 placeholder="add task … · complete … · remind me …">
+          <button class="btn btn-primary" id="assistant-send" title="Send">➤</button>
+        </div>
       </div>
     </div>
 
@@ -103,7 +123,6 @@
           <div class="tasks-panel-actions">
             <span class="streak-chip" id="streak-chip" title="Daily streak">🔥 0</span>
             <button class="tp-btn" id="focus-open" title="Focus timer">⏱</button>
-            <button class="tp-btn" id="theme-open" title="Change theme">🎨</button>
             <button class="tp-btn" id="categories-open" title="Manage categories">🗂</button>
             <button class="tp-btn" id="tasks-hide" title="Hide planner">▁</button>
           </div>
@@ -153,14 +172,6 @@
             <div class="cal-day-title" id="cal-day-title">Today</div>
             <div class="cal-day-list" id="cal-day-list"></div>
           </div>
-        </div>
-      </div>
-
-      <!-- === Theme palette (pops up at the bottom-left of the planner) === -->
-      <div id="theme-palette" class="palette-hidden">
-        <div class="palette-glass">
-          <div class="palette-title">🎨 Theme</div>
-          <div class="palette-grid" id="theme-grid"></div>
         </div>
       </div>
 
@@ -228,6 +239,10 @@
           <span>Weather display</span>
           <input type="checkbox" id="setting-weather" checked>
         </label>
+        <label class="setting-row">
+          <span>OpenAI key (AI assistant)</span>
+          <input type="password" id="setting-ai-key" class="setting-text" placeholder="sk-…" autocomplete="off" spellcheck="false">
+        </label>
       </div>
     </div>
 
@@ -263,6 +278,7 @@
 
   </div>
 
+  <script src="assistant-parser.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>

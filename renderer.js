@@ -5,6 +5,7 @@ const app = document.getElementById('app');
 const infoPopup = document.getElementById('info-popup');
 const settingsPanel = document.getElementById('settings-panel');
 const vaultPanel = document.getElementById('clipboard-vault');
+const assistantPanel = document.getElementById('assistant-panel');
 const notesPanel = document.getElementById('notes-panel');
 const tasksPanel = document.getElementById('tasks-panel');
 const categoriesPanel = document.getElementById('categories-panel');
@@ -41,6 +42,7 @@ let calSelectedKey = null;     // calendar view: selected day 'YYYY-MM-DD'
 const settings = {
   alwaysOnTop: true,
   weather: true,
+  aiKey: '',        // OpenAI API key for the AI assistant fallthrough (set in Settings)
 };
 
 // === API wrapper (Electron or browser fallback) ===
@@ -67,8 +69,16 @@ const api = {
     if (hasElectron) return window.electronAPI.getClipboardHistory();
     return Promise.resolve([]);
   },
-  deleteClipboardItem(text) { if (hasElectron) window.electronAPI.deleteClipboardItem(text); },
+  deleteClipboardItem(key) { if (hasElectron) window.electronAPI.deleteClipboardItem(key); },
   clearClipboardHistory() { if (hasElectron) window.electronAPI.clearClipboardHistory(); },
+  getClipboardImage(hash) {
+    if (hasElectron) return window.electronAPI.getClipboardImage(hash);
+    return Promise.resolve('');
+  },
+  writeClipboardImage(hash) {
+    if (hasElectron) return window.electronAPI.writeClipboardImage(hash);
+    return Promise.resolve(false);
+  },
   onOpenPanel(cb) { if (hasElectron) window.electronAPI.onOpenPanel(cb); },
   onScreenshotDone(cb) { if (hasElectron) window.electronAPI.onScreenshotDone(cb); },
   // Full-screen deadline alert (Electron only; the browser preview shows the
@@ -82,6 +92,10 @@ const api = {
   },
   onSetSleeping(cb) { if (hasElectron) window.electronAPI.onSetSleeping(cb); },
   onAltDim(cb) { if (hasElectron) window.electronAPI.onAltDim(cb); },
+  // Focus session — the planner unsummons into a slim focus bar while a
+  // timer runs; the bar's buttons come back here as commands.
+  setFocusSession(state) { if (hasElectron) window.electronAPI.setFocusSession(state); },
+  onFocusBarCmd(cb) { if (hasElectron) window.electronAPI.onFocusBarCmd(cb); },
   // App view modes (tasks / calendar / week — one at a time)
   setMode(mode) {
     if (hasElectron) window.electronAPI.setMode(mode);
@@ -100,6 +114,7 @@ function init() {
     switch (action) {
       case 'info': toggleInfoPopup(); break;
       case 'clipboard': openClipboardVault(); break;
+      case 'assistant': openAssistantPanel(); break;
       case 'tasks': showPlanner(); break;
       case 'focus': openFocusPanel(); break;
       case 'settings': openSettingsPanel(); break;
@@ -125,6 +140,13 @@ function init() {
   api.onAltDim((s) => {
     document.body.classList.toggle('alt-dim', !!(s && s.active));
     sendInteractiveBounds();
+  });
+  // Commands from the slim focus bar (shown while a session runs — the
+  // planner is unsummoned, so the bar owns pause/resume/stop).
+  api.onFocusBarCmd(({ action }) => {
+    if (action === 'pause') pauseFocus();
+    else if (action === 'resume') startFocus();
+    else if (action === 'stop') resetFocus();
   });
   // View modes: 'tasks'/'calendar' render in this window; 'week' hides it in
   // favour of the top-of-screen week strip (main.js owns the window toggles).
@@ -179,12 +201,16 @@ function init() {
     }
   });
 
+  // The app ships with a single signature look: the black glass theme. It is
+  // forced here (not read from storage) so every window is always black,
+  // whatever was persisted by an older build with a theme picker.
+  document.body.dataset.theme = 'black';
+
   updateClock();
   setInterval(updateClock, 1000);
   updateWeather();
   updateQuote();
   loadSettings();
-  loadTheme();
 
   if (hasElectron) {
     document.body.classList.add('electron-mode');
@@ -205,6 +231,12 @@ function init() {
   renderStreak();
   renderDailyProgress();
   renderFocusMini();
+  // Re-announce the focus state to main on every load: if this renderer was
+  // reloaded mid-session (crash, devtools), the timer state is gone — main
+  // must un-set its focusSessionActive flag or it would keep the planner
+  // unsummoned forever with no bar to show. Idle state sends {active:false},
+  // which restores the active mode's windows.
+  syncFocusBar();
   // Live ticker: prunes expired deadlines + finished tasks and re-checks the
   // streak (day rollover) every minute. The lists themselves are only
   // re-rendered while the planner is visible, so a hidden planner never
@@ -257,10 +289,10 @@ function sendInteractiveBounds() {
     !infoPopup.classList.contains('popup-hidden') ||
     !settingsPanel.classList.contains('panel-hidden') ||
     !vaultPanel.classList.contains('popup-hidden') ||
+    !assistantPanel.classList.contains('popup-hidden') ||
     !notesPanel.classList.contains('panel-hidden') ||
     !categoriesPanel.classList.contains('panel-hidden') ||
-    !focusPanel.classList.contains('popup-hidden') ||
-    !document.getElementById('theme-palette').classList.contains('palette-hidden');
+    !focusPanel.classList.contains('popup-hidden');
   if (anyPopup) {
     bounds.push({ x: 0, y: 0, w: appRect.width, h: appRect.height });
   }
@@ -276,6 +308,63 @@ function sendInteractiveBounds() {
 
   window.electronAPI.updateInteractiveBounds(bounds);
 }
+
+// === Custom tooltips ===
+// Every interactive element's native title bubble is replaced by a clean
+// glass tooltip in the app's font (the OS bubble can't be styled). The
+// first hover on a [title] element steals its text into data-tip and drops
+// the native attribute; later hovers reuse data-tip instantly.
+let appTipEl = null;
+let appTipTimer = null;
+function ensureAppTip() {
+  if (appTipEl) return appTipEl;
+  appTipEl = document.createElement('div');
+  appTipEl.className = 'app-tooltip';
+  document.body.appendChild(appTipEl);
+  return appTipEl;
+}
+function showAppTip(el, text) {
+  const tip = ensureAppTip();
+  tip.textContent = text;
+  const r = el.getBoundingClientRect();
+  const w = Math.min(240, tip.offsetWidth || 160);
+  const h = tip.offsetHeight || 30;
+  let left = r.left + r.width / 2 - w / 2;
+  left = Math.max(6, Math.min(left, window.innerWidth - w - 6));
+  // Above the element, flipping below when it sits near the top edge.
+  const top = r.top > 70 ? r.top - h - 10 : r.bottom + 10;
+  tip.style.left = left + 'px';
+  tip.style.top = Math.max(6, Math.min(top, window.innerHeight - h - 6)) + 'px';
+  tip.classList.add('visible');
+}
+function hideAppTip() {
+  if (appTipTimer) { clearTimeout(appTipTimer); appTipTimer = null; }
+  if (appTipEl) appTipEl.classList.remove('visible');
+}
+document.addEventListener('mouseover', (e) => {
+  const el = e.target.closest('[title],[data-tip]');
+  if (!el || el.closest('.app-tooltip')) return;
+  // Task/deadline rows have their own detailed hover card — skip the plain
+  // name tooltip there, but keep the row's action-button tooltips.
+  if (el.closest('.item-row') && !el.closest('button')) return;
+  let text = el.dataset.tip;
+  if (text == null) {
+    text = el.getAttribute('title') || '';
+    if (!text) return;
+    el.setAttribute('data-tip', text);
+    el.removeAttribute('title');
+  }
+  if (appTipTimer) clearTimeout(appTipTimer);
+  appTipTimer = setTimeout(() => showAppTip(el, text), 180);
+});
+document.addEventListener('mouseout', (e) => {
+  const from = e.target.closest && e.target.closest('[title],[data-tip]');
+  const to = e.relatedTarget && e.relatedTarget.closest ? e.relatedTarget.closest('[title],[data-tip]') : null;
+  if (from && from !== to) hideAppTip();
+});
+// Dismiss when the planner scrolls under the cursor or anything is clicked.
+document.addEventListener('scroll', hideAppTip, true);
+document.addEventListener('click', hideAppTip, true);
 
 // === Clock ===
 function updateClock() {
@@ -321,6 +410,7 @@ app.addEventListener('click', (e) => {
   if (e.target.closest('.popup-glass') || e.target.closest('.panel-glass')) return;
   closeRadialMenu();
   closeClipboardVault();
+  closeAssistantPanel();
   closeNotesPanel();
   closeCategoriesPanel();
   closeFocusPanel();
@@ -334,42 +424,6 @@ if (launcherEl) {
     e.stopPropagation();
     toggleRadialMenu();
   });
-
-  // Hover-arm for the browser-preview launcher: rest on the button ~2.5s to
-  // open the ring (matches the floating launcher window in Electron, which
-  // runs the same arming logic in main.js).
-  (function armBrowserLauncher() {
-    const ARM_MS = 2500;
-    const ring = document.getElementById('browser-arm-ring');
-    const timer = document.getElementById('browser-arm-timer');
-    let start = 0, raf = null, armed = false;
-    const tick = (t) => {
-      const p = Math.min(1, (t - start) / ARM_MS);
-      if (ring) ring.style.setProperty('--p', (p * 100).toFixed(1));
-      if (timer) timer.textContent = p < 1 ? Math.ceil((1 - p) * ARM_MS / 1000) + 's' : '';
-      document.body.classList.toggle('arming', p > 0 && p < 1);
-      if (p >= 1) {
-        armed = true;
-        document.body.classList.remove('arming');
-        document.body.classList.add('armed');
-        if (!radialOpen) toggleRadialMenu();
-        return;
-      }
-      raf = requestAnimationFrame(tick);
-    };
-    launcherEl.addEventListener('mouseenter', () => {
-      if (armed || radialOpen) return;
-      start = performance.now();
-      raf = requestAnimationFrame(tick);
-    });
-    launcherEl.addEventListener('mouseleave', () => {
-      cancelAnimationFrame(raf);
-      document.body.classList.remove('arming', 'armed');
-      if (ring) ring.style.setProperty('--p', '0');
-      if (timer) timer.textContent = '';
-      if (armed) { armed = false; closeRadialMenu(); }
-    });
-  })();
 }
 
 // === Info Popup ===
@@ -399,6 +453,11 @@ document.getElementById('settings-close').addEventListener('click', (e) => { e.s
     if (id === 'setting-ontop') api.setAlwaysOnTop(this.checked);
   });
 });
+const aiKeyInput = document.getElementById('setting-ai-key');
+if (aiKeyInput) aiKeyInput.addEventListener('change', function() {
+  settings.aiKey = this.value.trim();
+  saveSettings();
+});
 
 function openSettingsPanel() {
   settingsPanel.classList.remove('panel-hidden');
@@ -412,73 +471,13 @@ function loadSettings() {
   try { Object.assign(settings, JSON.parse(localStorage.getItem('wolf-pet-settings')) || {}); } catch (e) {}
   document.getElementById('setting-weather').checked = settings.weather;
   document.getElementById('setting-ontop').checked = settings.alwaysOnTop;
+  const aiKeyEl = document.getElementById('setting-ai-key');
+  if (aiKeyEl) aiKeyEl.value = settings.aiKey || '';
   // Apply the saved on-top preference at startup — the window is created
   // always-on-top, so without this the toggle only worked mid-session.
   api.setAlwaysOnTop(settings.alwaysOnTop);
 }
 function saveSettings() { localStorage.setItem('wolf-pet-settings', JSON.stringify(settings)); }
-
-// === Theme palette (pops up at the bottom-left of the planner) ===
-// Each theme swaps the app's CSS variables via body[data-theme=…] — the
-// swatch grid below is a gradient preview of what the glass becomes.
-const THEMES = [
-  { id: 'black',      name: 'Black',      gradient: 'linear-gradient(135deg, #3a3a3a, #000000)' },
-  { id: 'white',      name: 'White',      gradient: 'linear-gradient(135deg, #ffffff, #d6deea)' },
-  { id: 'light-blue', name: 'Light Blue', gradient: 'linear-gradient(135deg, #c7e6ff, #38bdf8)' },
-  { id: 'dark-blue',  name: 'Dark Blue',  gradient: 'linear-gradient(135deg, #60a5fa, #172554)' },
-  { id: 'green',      name: 'Green',      gradient: 'linear-gradient(135deg, #34d399, #065f46)' },
-  { id: 'pink',       name: 'Pink',       gradient: 'linear-gradient(135deg, #fbcfe8, #ec4899)' },
-  { id: 'purple',     name: 'Purple',     gradient: 'linear-gradient(135deg, #ddd6fe, #7c3aed)' },
-  { id: 'red',        name: 'Red',        gradient: 'linear-gradient(135deg, #fca5a5, #b91c1c)' },
-];
-let themeId = 'default';
-
-function applyTheme(id) {
-  themeId = (id && THEMES.some(t => t.id === id)) ? id : 'default';
-  if (themeId === 'default') delete document.body.dataset.theme;
-  else document.body.dataset.theme = themeId;
-  localStorage.setItem('wolf-theme', themeId);
-  const grid = document.getElementById('theme-grid');
-  if (grid) grid.querySelectorAll('.swatch').forEach(s => s.classList.toggle('active', s.dataset.theme === themeId));
-}
-
-function loadTheme() {
-  let id = 'default';
-  try { id = localStorage.getItem('wolf-theme') || 'default'; } catch (e) {}
-  applyTheme(id);
-}
-
-function renderThemeGrid() {
-  const grid = document.getElementById('theme-grid');
-  if (!grid || grid.childNodes.length) return;
-  THEMES.forEach(t => {
-    const s = document.createElement('button');
-    s.type = 'button';
-    s.className = 'swatch' + (t.id === themeId ? ' active' : '');
-    s.dataset.theme = t.id;
-    s.style.background = t.gradient;
-    s.title = t.name;
-    s.setAttribute('aria-label', t.name);
-    s.addEventListener('click', (e) => {
-      e.stopPropagation();
-      applyTheme(t.id);
-      closeThemePalette();
-      showToast('🎨 ' + t.name + ' theme applied');
-    });
-    grid.appendChild(s);
-  });
-}
-
-function openThemePalette() {
-  renderThemeGrid();
-  document.getElementById('theme-palette').classList.remove('palette-hidden');
-  sendInteractiveBounds();
-}
-
-function closeThemePalette() {
-  document.getElementById('theme-palette').classList.add('palette-hidden');
-  sendInteractiveBounds();
-}
 
 // === Daily date key (used by the planner to prune finished tasks) ===
 const dayKeyNow = () => {
@@ -494,14 +493,14 @@ const todayStartMs = () => {
 };
 
 // === Glass Ring Menu (browser preview only — built from RING_ACTIONS) ===
+// View switching (tasks/calendar/week) lives in the planner's own view bar,
+// so the ring only carries the feature shortcuts.
 const RING_ACTIONS = [
   { action: 'info', icon: 'ℹ️', label: 'Info' },
   { action: 'clipboard', icon: '📋', label: 'Clipboard' },
+  { action: 'assistant', icon: '🗨️', label: 'Assistant' },
   { action: 'notes', icon: '📝', label: 'Notes' },
-  { action: 'tasks', icon: '🎯', label: 'Tasks' },
   { action: 'focus', icon: '⏱️', label: 'Focus' },
-  { action: 'calendar', icon: '📅', label: 'Calendar' },
-  { action: 'week', icon: '📆', label: 'Week' },
   { action: 'screenshot', icon: '📷', label: 'Screenshot' },
   { action: 'settings', icon: '⚙️', label: 'Settings' },
 ];
@@ -509,9 +508,8 @@ const RING_ACTIONS = [
 // Accent hue per action — feeds both the glow identity and the SVG
 // gradient paint servers for each wedge + glass button.
 const ACTION_COLORS = {
-  info: '#38bdf8', clipboard: '#2dd4bf', notes: '#fbbf24',
-  tasks: '#34d399', focus: '#a3e635', calendar: '#f97316', week: '#818cf8',
-  screenshot: '#f472b6', settings: '#94a3b8',
+  info: '#38bdf8', clipboard: '#2dd4bf', assistant: '#e879f9', notes: '#fbbf24',
+  focus: '#a3e635', screenshot: '#f472b6', settings: '#94a3b8',
 };
 
 // Build the ring: N equal arc segments (annular sectors) with an icon on each.
@@ -641,10 +639,10 @@ function closeAllPopups() {
   infoPopup.classList.add('popup-hidden');
   settingsPanel.classList.add('panel-hidden');
   vaultPanel.classList.add('popup-hidden');
+  assistantPanel.classList.add('popup-hidden');
   notesPanel.classList.add('panel-hidden');
   categoriesPanel.classList.add('panel-hidden');
   focusPanel.classList.add('popup-hidden');
-  closeThemePalette();
   // The ring opens above everything — the add/edit modal must not stay
   // behind its backdrop (it would cover the ring and eat its clicks).
   hideAddTaskModal();
@@ -702,20 +700,14 @@ if (ringSegments) {
       case 'clipboard':
         openClipboardVault();
         break;
+      case 'assistant':
+        openAssistantPanel();
+        break;
       case 'notes':
         api.openNotesPanel();
         break;
-      case 'tasks':
-        showPlanner();
-        break;
       case 'focus':
         openFocusPanel();
-        break;
-      case 'calendar':
-        setAppView('calendar');
-        break;
-      case 'week':
-        api.setMode('week');
         break;
       case 'screenshot':
         api.openScreenshotOverlay();
@@ -756,13 +748,6 @@ function renderVault(items) {
   }
   items.forEach(item => {
     const row = document.createElement('div');
-    row.className = 'vault-item';
-
-    const txt = document.createElement('span');
-    txt.className = 'vault-text';
-    txt.textContent = item.text;
-    txt.title = item.text;
-
     const meta = document.createElement('span');
     meta.className = 'vault-meta';
     meta.textContent = timeAgo(item.time);
@@ -771,6 +756,30 @@ function renderVault(items) {
     del.className = 'vault-del';
     del.textContent = '✕';
     del.title = 'Remove from history';
+
+    if (item.type === 'image') {
+      // Screenshot / copied picture — thumbnail, click to copy back.
+      row.className = 'vault-item vault-item-img';
+      const imgEl = document.createElement('img');
+      imgEl.className = 'vault-img';
+      imgEl.alt = 'Clipboard image';
+      api.getClipboardImage(item.hash).then((url) => { if (url) imgEl.src = url; });
+      del.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        api.deleteClipboardItem(item.hash);
+      });
+      row.append(imgEl, meta, del);
+      row.addEventListener('click', () => copyHistoryImage(item.hash));
+      list.appendChild(row);
+      return;
+    }
+
+    row.className = 'vault-item';
+    const txt = document.createElement('span');
+    txt.className = 'vault-text';
+    txt.textContent = item.text;
+    txt.title = item.text;
+
     del.addEventListener('click', (ev) => {
       ev.stopPropagation();
       api.deleteClipboardItem(item.text);
@@ -784,6 +793,12 @@ function renderVault(items) {
 
 function copyHistoryItem(text) {
   api.writeClipboard(text).then(() => showToast('Copied to clipboard! 📋'));
+}
+
+function copyHistoryImage(hash) {
+  api.writeClipboardImage(hash).then((ok) => {
+    if (ok) showToast('Image copied to clipboard! 📋');
+  });
 }
 
 function timeAgo(ts) {
@@ -804,6 +819,509 @@ document.getElementById('vault-clear').addEventListener('click', (e) => {
   refreshVault();
   showToast('Clipboard history cleared 🧹');
 });
+
+// === Assistant (chat that manages your day) ===
+// Rule-based natural-language commands over the same tasks/deadlines state
+// the planner uses — no AI needed, works offline, replies in the chat.
+let assistantBooted = false;
+const ASSISTANT_PENDING = { q: null }; // follow-up selection state
+
+const ASSISTANT_HELP =
+  "I manage your day. Try things like:\n" +
+  '• "add task write report for 2h by Friday 3pm"\n' +
+  '• "I have a test next Thursday at 2pm"\n' +
+  '• "completed the report for 35 mins"\n' +
+  '• "delete task report"\n' +
+  '• "remind me at 5pm to call mom"\n' +
+  '• "show clipboard" · "show screenshots"\n' +
+  '• "what\'s due today?" · "list my tasks" · "help"';
+
+function openAssistantPanel() {
+  assistantPanel.classList.remove('popup-hidden');
+  infoPopup.classList.add('popup-hidden');
+  settingsPanel.classList.add('panel-hidden');
+  notesPanel.classList.add('panel-hidden');
+  closeClipboardVault();
+  sendInteractiveBounds();
+  if (!assistantBooted) {
+    assistantBooted = true;
+    assistantSay(ASSISTANT_HELP);
+  }
+  setTimeout(() => document.getElementById('assistant-input').focus(), 60);
+}
+
+function closeAssistantPanel() {
+  assistantPanel.classList.add('popup-hidden');
+  sendInteractiveBounds();
+}
+
+function assistantSay(text, who) {
+  const msgs = document.getElementById('assistant-msgs');
+  const b = document.createElement('div');
+  b.className = 'a-msg ' + (who === 'user' ? 'a-user' : 'a-bot');
+  b.textContent = text;
+  msgs.appendChild(b);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function assistantSend() {
+  const input = document.getElementById('assistant-input');
+  const q = input.value.trim();
+  if (!q) return;
+  input.value = '';
+  assistantSay(q, 'user');
+  assistantAnswer(q).then(assistantEmit);
+}
+
+// Route a reply to wherever the user is talking: the floating assistant
+// window (Electron) and/or the in-planner panel (browser fallback).
+function assistantEmit(reply) {
+  if (hasElectron && window.electronAPI && window.electronAPI.sendAssistantReply) {
+    window.electronAPI.sendAssistantReply(reply);
+  }
+  if (assistantPanel && !assistantPanel.classList.contains('popup-hidden')) {
+    if (reply && typeof reply === 'object' && reply.kind === 'clipboard') {
+      assistantSay(reply.text);
+      assistantSay('(In the browser preview there\'s no clipboard history — this works in the app.)');
+    } else {
+      assistantSay(typeof reply === 'string' ? reply : (reply && reply.text) || '');
+    }
+  }
+}
+
+// Pure natural-language parser (extracted to assistant-parser.js so it can be
+// unit-tested in isolation). Loaded as a <script> before renderer.js.
+const { assistantCleanName, assistantExtractWhen } = window.AssistantParser;
+
+// The assistant's brain: turns a natural-language message into a reply
+// string (or a { kind: 'clipboard', ... } payload) and performs the action
+// on the real tasks/deadlines data. Used by the floating window AND the
+// in-planner panel — one parser, two UIs.
+function assistantHandleText(raw) {
+  let q = String(raw || '').replace(/\s+/g, ' ').trim();
+  // Filler words people type before getting to the point.
+  q = q.replace(/^(oh|so|um|uh|ok|okay|hey|hi|yo|like|well|hmm|also)[,\s]+/i, '');
+  if (!q) return 'Say something like "I have a test next Thursday at 2pm" or "show screenshots".';
+  const lq = q.toLowerCase();
+
+  // Follow-up selection: "1", "the second one", "#3", or a time answer.
+  if (ASSISTANT_PENDING.q) {
+    const r = assistantHandleFollowUp(q);
+    if (r !== null) return r;
+    return ASSISTANT_PENDING.q.hint || 'Could you rephrase that? (reply with a number or a time)';
+  }
+
+  if (/^(help|what can you do|commands|help me)\b/.test(lq)) return ASSISTANT_HELP;
+  if (/(?:clipboard|screenshot|screen\s*shot|copied|history)/.test(lq)) return assistantClipboard(lq);
+  if (lq.includes('remind')) return assistantRemind(q);
+  if (/^(?:please\s+)?(?:add|create|new)\s+/.test(lq)) return assistantAdd(q);
+  // Events phrased without "add": "I have a test next Thursday at 2pm".
+  if (/(^|\s)(?:i\s+have|i've\s+got|ive\s+got|i\s+got|got|there'?s|there\s+is|we\s+have)\s+(?:a\s+|an\s+|the\s+)?/.test(lq)) {
+    const r = assistantEvent(q);
+    if (r) return r;
+  }
+  if (/(?:complete|completed|done|finish|finished|did|knocked|checked)/.test(lq)) return assistantComplete(q);
+  if (/(?:delete|remove|get\s+rid|drop)/.test(lq)) return assistantDelete(q);
+  if (/(?:due|today|tomorrow|schedule|plan|what'?s\s+(?:on|up)|deadline)/.test(lq)) return assistantDue();
+  if (/(?:list|show|my\s+tasks|all\s+tasks)/.test(lq)) return assistantList();
+  return null; // no rule matched — the AI fallthrough handles it (or a helpful hint)
+}
+
+// === AI fallthrough: when no rule matches, ask a real LLM (OpenAI) to turn
+// the message into a structured app action. Needs an API key in Settings. ===
+async function assistantAnswer(raw) {
+  const r = assistantHandleText(raw);
+  if (r !== null) return r;
+  return assistantAIFallback(raw);
+}
+
+async function assistantAIFallback(raw) {
+  const key = (settings.aiKey || '').trim();
+  if (!key) {
+    return 'Hmm, I did not catch that — I understand tasks, deadlines, reminders, clipboard and screenshots. Say help for examples.\n\n💡 Add an OpenAI API key in Settings (⚙️) to let me handle free-form requests with AI.';
+  }
+
+  const now = new Date();
+  const state = {
+    now: now.toISOString(),
+    today: dayKey(now),
+    tasks: tasks.map((t) => ({
+      name: t.name,
+      due: t.due || null,
+      durationMin: t.durationMin || 0,
+      done: !!t.done,
+      category: (categories.find((c) => c.id === t.category) || {}).name || null,
+    })),
+    deadlines: deadlines.map((d) => ({ name: d.name, due: d.due || null, time: d.time || null, done: !!d.done })),
+    categories: categories.map((c) => c.name),
+  };
+
+  const system = [
+    'You are the assistant inside a desktop productivity app (tasks + deadlines).',
+    'Control the app by replying with a SINGLE JSON object and nothing else.',
+    'Schema: {reply: short answer, action: {type, ...}}.',
+    'Action types: add_task, add_deadline, complete_task, delete_task, none.',
+    'add_task fields: name, due (YYYY-MM-DD or null), durationMin (number or null), category (name or null).',
+    'add_deadline fields: name, due (YYYY-MM-DD or null), time (HH:MM 24h or null).',
+    'complete_task and delete_task fields: taskQuery (name or unique fragment).',
+    'none means no app change; answer the question in reply.',
+    'Rules: output valid JSON only; convert relative dates and times (tomorrow, next Thursday, 3pm, in 2 hours) to absolute values using the provided current time; dates are YYYY-MM-DD, times are 24-hour HH:MM.',
+    'For questions (what is due, what can you do), use type none and put the full answer in reply.',
+    'Only complete or delete tasks that actually exist in the provided task list; match by name.',
+    'If a request is ambiguous or not actionable, use type none with a helpful reply.',
+    'Never invent tasks. Use the task list you are given.',
+  ].join('\n');
+
+  try {
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + key },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        temperature: 0,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: JSON.stringify({ request: raw, state }) },
+        ],
+      }),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error('HTTP ' + res.status + (body ? ' ' + body.slice(0, 200) : ''));
+    }
+    const data = await res.json();
+    const content = data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+    if (!content) throw new Error('empty response');
+    const parsed = JSON.parse(content);
+    const action = parsed && parsed.action ? parsed.action : parsed;
+    const applied = assistantApplyAction(action);
+    if (applied) return applied;
+    return (parsed && typeof parsed.reply === 'string' && parsed.reply.trim()) || 'I understood, but I could not map that to an app action.';
+  } catch (e) {
+    return '⚠️ AI request failed — check your OpenAI key (Settings ⚙️) and connection. Offline commands still work: say help. (' + (e && e.message ? e.message : 'error') + ')';
+  }
+}
+
+// Execute a structured action returned by the AI against the real data.
+function assistantApplyAction(action) {
+  if (!action || typeof action !== 'object') return null;
+  const type = action.type;
+  const due = /^\d{4}-\d{2}-\d{2}$/.test(action.due || '') ? action.due : '';
+  const time = /^\d{2}:\d{2}$/.test(action.time || '') ? action.time : '';
+  const durationMin = typeof action.durationMin === 'number' && action.durationMin > 0 ? Math.round(action.durationMin) : 0;
+
+  if (type === 'add_task') {
+    const name = assistantCleanName(action.name || '');
+    if (!name) return 'What should the task be called?';
+    let category = '';
+    if (action.category) {
+      const found = categories.find((c) => c.name.toLowerCase() === String(action.category).toLowerCase());
+      if (found) category = found.id;
+    }
+    const t = { id: Date.now(), name, due, durationMin, done: false, category, progressMin: 0 };
+    tasks.unshift(t);
+    saveTasks(); renderTasks(); refreshActiveView();
+    let r = '✅ Added "' + name + '"';
+    if (due) r += ' · due ' + fmtDateShort(due);
+    if (durationMin) r += ' · ' + Math.round(durationMin / 60 * 10) / 10 + 'h';
+    if (category) { const c = categories.find((x) => x.id === category); if (c) r += ' · in ' + c.name; }
+    return r + '.';
+  }
+  if (type === 'add_deadline') {
+    const name = assistantCleanName(action.name || '');
+    if (!name) return 'What should the deadline be called?';
+    const d = { id: Date.now(), name, due, time, done: false };
+    deadlines.unshift(d);
+    saveDeadlines(); renderDeadlines(); refreshActiveView(); tickDeadlineReminders();
+    let r = '✅ Deadline added: "' + name + '"';
+    if (due) r += ' · ' + fmtDateShort(due) + (time ? ' at ' + fmtTimeOfDay(time) : '');
+    return r + '. I will remind you 30/20/10/5 min before.';
+  }
+  if (type === 'complete_task') {
+    const q = String(action.taskQuery || action.name || '').trim();
+    if (!q) return 'Which task did you finish? (name it)';
+    return assistantPickTask(q, 'complete', {});
+  }
+  if (type === 'delete_task') {
+    const q = String(action.taskQuery || action.name || '').trim();
+    if (!q) return 'Which task should I remove? (name it)';
+    return assistantPickTask(q, 'delete', null);
+  }
+  return null; // none / unknown → use the model reply
+}
+
+function assistantAdd(q) {
+  const explicitTask = /^add\s+(?:a\s+|an\s+)?task\b/i.test(q);
+  let rest = q.replace(/^(?:please\s+)?(?:add|create|new)\s+(?:a\s+|an\s+)?(?:task\s+)?/i, '');
+  // "add a test ..." / "add deadline ..." / "add meeting ..." → deadline
+  // (explicit "add task ..." always makes a task).
+  const isDeadline = !explicitTask && /\b(?:deadline|event|test|exam|quiz|meeting|appointment|appt|reminder|call)\b/i.test(rest);
+
+  // Duration: "for 2h" / "for 35 minutes" / "lasting 45 min"
+  let durationMin = 0;
+  const dur = rest.match(/(?:for|lasting|about)\s+(\d+(?:\.\d+)?)\s*(h(?:ours?)?|hrs?|m(?:ins?)?|min(?:utes?)?)\b/i);
+  if (dur) {
+    const n = parseFloat(dur[1]);
+    durationMin = Math.round(dur[2][0].toLowerCase() === 'h' ? n * 60 : n);
+    rest = rest.replace(dur[0], ' ');
+  }
+
+  // Category: "in <category>" at the end (tasks only)
+  let category = '';
+  let warn = '';
+  if (!isDeadline) {
+    const cat = rest.match(/\bin\s+([a-z0-9 _-]+?)\s*$/i);
+    if (cat) {
+      const found = categories.find(c => c.name.toLowerCase() === cat[1].trim().toLowerCase());
+      if (found) {
+        category = found.id;
+        rest = rest.replace(cat[0], ' ');
+      } else {
+        warn = ' (no category "' + cat[1].trim() + '" found — added without one)';
+      }
+    }
+  }
+
+  const when = assistantExtractWhen(rest);
+  const name = assistantCleanName(when ? when.rest : rest);
+  if (!name) {
+    return isDeadline
+      ? 'What should the deadline be called? Try: "add a test next Thursday at 2pm"'
+      : 'What should the task be called? Try: "add task <name> for 2h by Friday 3pm"';
+  }
+
+  if (isDeadline) {
+    deadlines.unshift({ id: Date.now(), name, due: when ? when.due : '', time: when ? when.time : '', done: false });
+    saveDeadlines();
+    renderDeadlines();
+    refreshActiveView();
+    tickDeadlineReminders();
+    let r = '✅ Deadline added: "' + name + '"';
+    if (when) r += ' · ' + fmtDateShort(when.due) + ' at ' + fmtTimeOfDay(when.time);
+    r += '. I\'ll remind you 30/20/10/5 min before.';
+    return r;
+  }
+
+  tasks.unshift({ id: Date.now(), name, due: when ? when.due : '', durationMin, done: false, category, progressMin: 0 });
+  saveTasks();
+  renderTasks();
+  refreshActiveView();
+  let reply = '✅ Added "' + name + '"';
+  if (durationMin) reply += ' · ' + Math.round(durationMin / 60 * 10) / 10 + 'h';
+  if (when) reply += ' · due ' + fmtDateShort(when.due) + ' at ' + fmtTimeOfDay(when.time);
+  if (category) {
+    const c = categories.find(x => x.id === category);
+    if (c) reply += ' · in ' + c.name;
+  }
+  return reply + '.' + warn;
+}
+
+function assistantComplete(q) {
+  let rest = q;
+  let actualMin = 0;
+  const dur = rest.match(/for\s+(\d+(?:\.\d+)?)\s*(h(?:ours?)?|hrs?|mins?|minutes?)\b/i);
+  if (dur) {
+    const n = parseFloat(dur[1]);
+    actualMin = Math.round(dur[2][0].toLowerCase() === 'h' ? n * 60 : n);
+    rest = rest.replace(dur[0], ' ');
+  }
+  const query = rest
+    .replace(/^(?:i\s+)?(?:have\s+|just\s+)?(?:completed?|done|finished?|did|knocked\s+out|checked\s+off|got\s+done)\s+(?:with\s+)?(?:the\s+)?(?:task\s+)?/i, '')
+    .trim();
+  return assistantPickTask(query, 'complete', { actualMin });
+}
+
+function assistantDelete(q) {
+  const query = q
+    .replace(/^(?:please\s+)?(?:delete|remove|drop|get\s+rid\s+of)\s+(?:the\s+)?(?:task\s+)?/i, '')
+    .trim();
+  return assistantPickTask(query, 'delete', null);
+}
+
+function assistantPickTask(query, mode, extra) {
+  if (!query) {
+    return mode === 'complete' ? 'Which task did you finish? (name it)' : 'Which task should I remove? (name it)';
+  }
+  const lq = query.toLowerCase();
+  const numMatch = lq.match(/^task\s*(\d+)$/);
+  if (numMatch) {
+    const n = parseInt(numMatch[1], 10);
+    if (ASSISTANT_PENDING.q && ASSISTANT_PENDING.q.matches) {
+      const t = ASSISTANT_PENDING.q.matches[n - 1];
+      if (t) { const p = ASSISTANT_PENDING.q; ASSISTANT_PENDING.q = null; return assistantApply(p.mode, t, p.extra); }
+    }
+    const t = tasks[n - 1];
+    if (t) return assistantApply(mode, t, extra);
+    return 'I don\'t see task #' + n + '.';
+  }
+  let matches = tasks.filter(t => !t.done && t.name.toLowerCase().includes(lq));
+  if (!matches.length) matches = tasks.filter(t => t.name.toLowerCase().includes(lq));
+  if (!matches.length) {
+    return 'No task matching "' + query + '" — try "list my tasks" to see what\'s there.';
+  }
+  if (matches.length === 1) return assistantApply(mode, matches[0], extra);
+  ASSISTANT_PENDING.q = {
+    mode, matches: matches.slice(0, 5), extra,
+    hint: 'I asked which one — reply with the number (e.g. "2").',
+  };
+  const lines = matches.slice(0, 5).map((t, i) =>
+    (i + 1) + '. "' + t.name + '"' + (t.due ? ' · ' + fmtDateShort(t.due) : '')).join('\n');
+  return 'I found a few — which one?\n' + lines + '\n\n(Reply with the number)';
+}
+
+function assistantApply(mode, t, extra) {
+  if (mode === 'complete') {
+    if (t.done) return '"' + t.name + '" is already done ✅';
+    if (extra && extra.actualMin) t.actualMin = extra.actualMin;
+    completeTask(t.id);
+    return '✅ Completed "' + t.name + '"' + (extra && extra.actualMin ? ' — logged ' + extra.actualMin + ' min' : '') + '. Nice work! 🎉';
+  } else if (mode === 'delete') {
+    deleteTask(t.id);
+    return '🗑 Removed "' + t.name + '".';
+  }
+  return '';
+}
+
+function assistantHandleFollowUp(q) {
+  const p = ASSISTANT_PENDING.q;
+  if (!p) return null;
+
+  // Reminder awaiting a "when" answer — parse the time phrase from the reply.
+  if (p.mode === 'remind' && !p.matches) {
+    const when = assistantExtractWhen(q);
+    if (!when) return null;
+    ASSISTANT_PENDING.q = null;
+    deadlines.unshift({ id: Date.now(), name: p.name, due: when.due, time: when.time, done: false });
+    saveDeadlines();
+    renderDeadlines();
+    refreshActiveView();
+    tickDeadlineReminders();
+    return '✅ Reminder set: "' + p.name + '" · ' + fmtDateShort(when.due) + ' at ' + fmtTimeOfDay(when.time) + '.';
+  }
+
+  if (!p.matches) return null;
+  const lq = q.toLowerCase();
+  const wordMatch = lq.match(/^(?:the\s+)?(?:first|1st|second|2nd|third|3rd)\b/);
+  const numMatch = lq.match(/(?:^|\s)(\d{1,2})\s*[.)]?$/);
+  let n = 0;
+  if (wordMatch) n = { first: 1, '1st': 1, second: 2, '2nd': 2, third: 3, '3rd': 3 }[wordMatch[1]] || 0;
+  else if (numMatch) n = parseInt(numMatch[1], 10);
+  if (!n) return null;
+  const t = p.matches[n - 1];
+  if (!t) return 'That number isn\'t on the list — pick one of the ones I showed.';
+  ASSISTANT_PENDING.q = null;
+  return assistantApply(p.mode, t, p.extra);
+}
+
+function assistantRemind(q) {
+  let rest = q.replace(/^remind\s+(me\s+)?(to\s+)?/i, '');
+  const when = assistantExtractWhen(rest);
+  if (!when) {
+    const name = assistantCleanName(rest);
+    if (name) {
+      ASSISTANT_PENDING.q = { mode: 'remind', matches: null, name, hint: 'Tell me a time, like "at 5pm" or "tomorrow 9am".' };
+      return '⏰ When should I remind you about "' + name + '"? (try "at 5pm", "in 30 minutes", "tomorrow 9am")';
+    }
+    return 'What should I remind you about — and when? Try: "remind me at 5pm to call mom"';
+  }
+  const name = assistantCleanName(when.rest);
+  if (!name) return 'Remind you about what? Try: "remind me at 5pm to call mom"';
+  deadlines.unshift({ id: Date.now(), name, due: when.due, time: when.time, done: false });
+  saveDeadlines();
+  renderDeadlines();
+  refreshActiveView();
+  tickDeadlineReminders();
+  return '✅ Reminder set: "' + name + '" · ' + fmtDateShort(when.due) + ' at ' + fmtTimeOfDay(when.time) + '.\nYou\'ll get a heads-up 30/20/10/5 min before.';
+}
+
+function assistantDue() {
+  const todayK = dayKey(new Date());
+  const tomorrowK = dayKey(new Date(Date.now() + 86400000));
+  const dueTasks = tasks.filter(t => !t.done && t.due === todayK);
+  const dueDl = deadlines.filter(d => !d.done && d.due === todayK);
+  const tmTasks = tasks.filter(t => !t.done && t.due === tomorrowK);
+  const tmDl = deadlines.filter(d => !d.done && d.due === tomorrowK);
+  if (!dueTasks.length && !dueDl.length && !tmTasks.length && !tmDl.length) {
+    return 'Nothing due today or tomorrow — enjoy the calm! ☕';
+  }
+  const lines = [];
+  if (dueTasks.length) lines.push('📌 Today\'s tasks: ' + dueTasks.map(t => '"' + t.name + '"' + (t.durationMin ? ' (' + Math.round(t.durationMin / 60 * 10) / 10 + 'h)' : '')).join(', '));
+  if (dueDl.length) lines.push('⏰ Today\'s deadlines: ' + dueDl.map(d => '"' + d.name + '" at ' + fmtTimeOfDay(d.time)).join(', '));
+  if (tmTasks.length) lines.push('🗓️ Tomorrow: ' + tmTasks.map(t => '"' + t.name + '"').join(', '));
+  if (tmDl.length) lines.push('🗓️ Tomorrow deadlines: ' + tmDl.map(d => '"' + d.name + '" at ' + fmtTimeOfDay(d.time)).join(', '));
+  return '📅 Today — ' + fmtDateShort(todayK) + ':\n' + lines.join('\n');
+}
+
+function assistantList() {
+  const open = tasks.filter(t => !t.done);
+  const dls = deadlines.filter(d => !d.done);
+  if (!open.length && !dls.length) {
+    return 'No open tasks or deadlines — add one: "add task <name> for 1h by Friday"';
+  }
+  const lines = [];
+  if (open.length) {
+    lines.push('🗒️ Tasks (' + open.length + '):');
+    open.slice(0, 12).forEach((t, i) => lines.push(
+      (i + 1) + '. "' + t.name + '" · ' + (t.due ? fmtDateShort(t.due) + (t.durationMin ? ' · ' + Math.round(t.durationMin / 60 * 10) / 10 + 'h' : '') : 'no date')));
+  }
+  if (dls.length) {
+    lines.push('⏰ Deadlines (' + dls.length + '):');
+    dls.slice(0, 8).forEach(d => lines.push('• "' + d.name + '" · ' + fmtDateShort(d.due) + (d.time ? ' ' + fmtTimeOfDay(d.time) : '')));
+  }
+  return lines.join('\n');
+}
+
+// "I have a test next Thursday at 2pm" → a deadline with reminders.
+function assistantEvent(q) {
+  const rest = q
+    .replace(/(?:i\s+have|i've\s+got|ive\s+got|i\s+got|got|there'?s|there\s+is|we\s+have)\s+(?:a\s+|an\s+|the\s+)?/i, '');
+  const when = assistantExtractWhen(rest);
+  if (!when) return null; // no time mentioned → let other handlers try
+  const name = assistantCleanName(when.rest);
+  if (!name) return null;
+  deadlines.unshift({ id: Date.now(), name, due: when.due, time: when.time, done: false });
+  saveDeadlines();
+  renderDeadlines();
+  refreshActiveView();
+  tickDeadlineReminders();
+  return '✅ Added "' + name + '" as a deadline · ' + fmtDateShort(when.due) + ' at ' + fmtTimeOfDay(when.time) + '.\nI\'ll remind you 30/20/10/5 min before.';
+}
+
+// "show clipboard" / "show screenshots" → the window renders the history
+// as clickable cards; the in-planner panel just gets the header text.
+function assistantClipboard(lq) {
+  const wantImages = /screenshot|screen\s*shot|image|picture|photo|img/.test(lq);
+  return {
+    kind: 'clipboard',
+    filter: wantImages ? 'image' : null,
+    text: wantImages
+      ? '🖼️ Your recent screenshots & images — click any one to copy it back:'
+      : '📋 Your clipboard history — click any item to copy it back:',
+  };
+}
+
+document.getElementById('assistant-close').addEventListener('click', (e) => { e.stopPropagation(); closeAssistantPanel(); });
+document.getElementById('assistant-send').addEventListener('click', (e) => { e.stopPropagation(); assistantSend(); });
+document.getElementById('assistant-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.stopPropagation(); assistantSend(); }
+});
+document.getElementById('assistant-chips').addEventListener('click', (e) => {
+  const chip = e.target.closest('.chip');
+  if (!chip) return;
+  e.stopPropagation();
+  const input = document.getElementById('assistant-input');
+  input.value = chip.dataset.q || '';
+  assistantSend();
+});
+
+// Assistant window (Electron): answer its messages with the same brain.
+if (window.electronAPI && window.electronAPI.onAssistantMessage) {
+  window.electronAPI.onAssistantMessage(({ text }) => {
+    if (!text) return;
+    assistantAnswer(text).then(assistantEmit);
+  });
+}
 
 // === Quick Notes (browser fallback panel) ===
 function loadNotes() {
@@ -1020,18 +1538,6 @@ function refreshCategoryUI() {
   if (!categoriesPanel.classList.contains('panel-hidden')) renderCategories();
 }
 
-document.getElementById('theme-open').addEventListener('click', (e) => {
-  e.stopPropagation();
-  // Toggle: a second click closes the palette.
-  if (document.getElementById('theme-palette').classList.contains('palette-hidden')) openThemePalette();
-  else closeThemePalette();
-});
-// Clicking anywhere else in the planner dismisses the palette (the palette's
-// own buttons stop propagation).
-tasksPanel.addEventListener('click', (e) => {
-  if (e.target.closest('#theme-palette')) return;
-  closeThemePalette();
-});
 document.getElementById('categories-open').addEventListener('click', (e) => { e.stopPropagation(); openCategoriesPanel(); });
 document.getElementById('categories-close').addEventListener('click', (e) => { e.stopPropagation(); closeCategoriesPanel(); });
 document.getElementById('categories-add').addEventListener('click', (e) => { e.stopPropagation(); addCategory(); });
@@ -1046,7 +1552,6 @@ function showPlanner() {
 
 function hidePlanner() {
   tasksPanel.classList.add('panel-hidden');
-  closeThemePalette();
   hideAddTaskModal();
   sendInteractiveBounds();
 }
@@ -1191,6 +1696,11 @@ function pruneExpiredDeadlines() {
 function renderDeadlines() {
   pruneExpiredDeadlines();
   const list = document.getElementById('deadlines-list');
+  // Re-rendering wipes the list (innerHTML='') and resets its scroll to the
+  // top — that made the list jump every time it re-rendered (the 60s tick,
+  // a completion, …). Capture the position and restore it below, after the
+  // rows are rebuilt; the restore happens in the same frame, so no flash.
+  const prevScroll = list.scrollTop;
   list.innerHTML = '';
   // The planner list only shows today + future — past days are history and
   // are viewed crossed out in the calendar / week views instead.
@@ -1210,21 +1720,23 @@ function renderDeadlines() {
     return d !== 0 ? d : a.name.localeCompare(b.name);
   });
   sorted.forEach(dl => list.appendChild(buildDeadlineRow(dl)));
+  list.scrollTop = Math.min(prevScroll, list.scrollHeight);
 }
 
-// Compact "clock" chip: how long until the deadline — (5m) (2h) (1d) (3d).
-// Colored by urgency; "Overdue" pulses red.
+// Compact "clock" badge: how long until the deadline — 5m 2h 1d 3d (the
+// chip itself is drawn as a circle around the number). Colored by urgency;
+// "Overdue" pulses red.
 function relativeDue(dl) {
   const ts = dueTs(dl);
   if (ts === Infinity) return { text: '', cls: '' };
   const diff = ts - Date.now();
   if (diff <= 0) return { text: 'Overdue', cls: 'past' };
   const m = Math.max(1, Math.round(diff / 60000));
-  if (m < 60) return { text: '(' + m + 'm)', cls: m <= 30 ? 'soon' : '' };
+  if (m < 60) return { text: m + 'm', cls: m <= 30 ? 'soon' : '' };
   const h = Math.max(1, Math.round(m / 60));
-  if (h < 24) return { text: '(' + h + 'h)', cls: h <= 6 ? 'soon' : '' };
+  if (h < 24) return { text: h + 'h', cls: h <= 6 ? 'soon' : '' };
   const d = Math.max(1, Math.round(h / 24));
-  return { text: '(' + d + 'd)', cls: d <= 1 ? 'today' : d === 2 ? 'close' : '' };
+  return { text: d + 'd', cls: d <= 1 ? 'today' : d === 2 ? 'close' : '' };
 }
 
 // One clean compact line: [check] [name] [date · time] [(1d)] [edit] [delete]
@@ -1304,6 +1816,10 @@ function deleteDeadline(id) {
 function renderTasks() {
   pruneExpiredTasks();
   const list = document.getElementById('tasks-list');
+  // Same scroll preservation as renderDeadlines: rebuild the rows but keep
+  // the list exactly where the user left it (no jump on the 60s tick or
+  // after marking progress). Restored in the same frame, so no flash.
+  const prevScroll = list.scrollTop;
   list.innerHTML = '';
   const todayStart = todayStartMs();
   const windowStart = todayStart - taskFilter * 86400000;
@@ -1354,6 +1870,7 @@ function renderTasks() {
     }
     list.appendChild(buildTaskRow(t, { past: isPastDay(key) }));
   });
+  list.scrollTop = Math.min(prevScroll, list.scrollHeight);
   renderFocusTasks(); // keep the focus-timer task dropdown in sync
   renderDailyProgress();
   renderFocusMini();
@@ -1688,7 +2205,9 @@ function wireRowHover(row, item, kind) {
   };
   row.addEventListener('mouseenter', () => {
     if (timer) clearTimeout(timer);
-    timer = setTimeout(show, 2000);
+    // A ~0.9s rest is enough to signal intent without feeling slow; faster
+    // than the old 2s, so the preview card reads as a responsive assistant.
+    timer = setTimeout(show, 900);
   });
   row.addEventListener('mouseleave', hide);
   row.addEventListener('click', hide);
@@ -1841,9 +2360,10 @@ function openItemModal(mode, id) {
       tmHours = h24 % 12 || 12;
     } else {
       // Clamp to the wheel ranges so an odd stored duration (0m, 30h, 58m)
-      // can't silently snap to a different value when the modal opens.
+      // can't silently snap to a different value when the modal opens. The
+      // hours wheel spans 0–24, so a full 24h duration survives untouched.
       const totalMin = existing.durationMin || 0;
-      tmHours = Math.min(23, Math.floor(totalMin / 60));
+      tmHours = Math.min(24, Math.floor(totalMin / 60));
       tmMins = Math.min(55, Math.round((totalMin % 60) / 5) * 5);
     }
   } else {
@@ -1877,12 +2397,11 @@ function openItemModal(mode, id) {
     buildWheel(mWheel, wheelValues(5, 60), tmMins, (v) => { tmMins = v; });
     buildWheel(apWheel, ['AM', 'PM'], tmAmPm, (v) => { tmAmPm = v; });
   } else {
-    // Tasks: the wheels pick a duration (0-23h), so no AM/PM. Hours step by 1
-    // — 0h is a valid option (pair it with minutes, e.g. 0h 30m). The step
-    // MUST be 1 here: wheelValues(0, 24) would loop forever (v += 0) and
-    // freeze the renderer the moment the modal opens.
+    // Tasks: the wheels pick a duration (0–24h), so no AM/PM. Hours step by
+    // 1 — 0h is a valid option (pair it with minutes, e.g. 0h 30m) and 24h
+    // stays reachable. wheelValues(0, 25) = step 1, so it terminates fine.
     apWheel.hidden = true;
-    buildWheel(hWheel, wheelValues(1, 24), tmHours, (v) => { tmHours = v; });
+    buildWheel(hWheel, wheelValues(0, 25), tmHours, (v) => { tmHours = v; });
     buildWheel(mWheel, wheelValues(5, 60), tmMins, (v) => { tmMins = v; });
   }
   if (mode === 'task') buildCatChips();
@@ -2126,7 +2645,9 @@ function buildWheel(wrapEl, values, selected, onChange) {
   list.innerHTML = '<div class="tm-wheel-pad"></div>' + items + '<div class="tm-wheel-pad"></div>';
   const selIdx = values.indexOf(selected);
   const maxScroll = Math.max(0, list.scrollHeight - list.clientHeight);
-  list.scrollTop = Math.max(0, Math.min(maxScroll, selIdx * ITEM_H));
+  // Initial position lands instantly (behavior 'auto' overrides the CSS
+  // scroll-behavior:smooth) so opening the modal never glides from 00.
+  list.scrollTo({ top: Math.max(0, Math.min(maxScroll, selIdx * ITEM_H)), behavior: 'auto' });
   const apply = () => {
     const idx = Math.max(0, Math.min(values.length - 1, Math.round(list.scrollTop / ITEM_H)));
     onChange(values[idx]);
@@ -2144,16 +2665,16 @@ function buildWheel(wrapEl, values, selected, onChange) {
     if (!it) return;
     const v = values.find((x) => fmt(x) === it.dataset.v);
     if (v === undefined) return;
-    list.scrollTop = Math.max(0, Math.min(maxScroll, values.indexOf(v) * ITEM_H));
-    apply();
+    // Glide to the picked value — the wheel turns smoothly instead of snapping.
+    list.scrollTo({ top: Math.max(0, Math.min(maxScroll, values.indexOf(v) * ITEM_H)), behavior: 'smooth' });
   };
   list.addEventListener('click', list._wheelClick);
   wrapEl.querySelectorAll('.tm-wheel-btn').forEach((btn) => {
     if (btn._wheelBtn) btn.removeEventListener('click', btn._wheelBtn);
     btn._wheelBtn = () => {
       const dir = parseInt(btn.dataset.dir, 10);
-      list.scrollTop = Math.max(0, Math.min(maxScroll, list.scrollTop + dir * ITEM_H));
-      apply();
+      // Smooth one-step nudge from the current position (no snap-jump).
+      list.scrollTo({ top: Math.max(0, Math.min(maxScroll, list.scrollTop + dir * ITEM_H)), behavior: 'smooth' });
     };
     btn.addEventListener('click', btn._wheelBtn);
   });
@@ -2488,6 +3009,33 @@ function focusTaskName() {
   return t ? t.name : '';
 }
 
+// Stream the session state to main so it can unsummon the planner into the
+// slim focus bar (and keep its ticking countdown fresh). Skipped when the
+// state is unchanged, so idle renders send nothing.
+let lastFocusSyncKey = '';
+function syncFocusBar() {
+  if (!hasElectron) return;
+  let date = 'No date';
+  if (focusTimer.taskId) {
+    const t = tasks.find((x) => String(x.id) === String(focusTimer.taskId));
+    const d = t && t.due ? parseDateKey(t.due) : null;
+    if (d) date = d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  }
+  const state = {
+    active: focusTimer.running ||
+      (focusTimer.remainingMs > 0 && focusTimer.remainingMs < focusTimer.totalMs),
+    running: focusTimer.running,
+    name: focusTaskName() || 'Custom session',
+    date,
+    remaining: Math.max(0, Math.ceil(focusTimer.remainingMs / 1000)),
+    total: Math.max(1, Math.ceil(focusTimer.totalMs / 1000)),
+  };
+  const key = state.active + '|' + state.running + '|' + state.name + '|' + state.date + '|' + state.remaining + '|' + state.total;
+  if (key === lastFocusSyncKey) return;
+  lastFocusSyncKey = key;
+  window.electronAPI.setFocusSession(state);
+}
+
 function renderFocusDisplay() {
   const timeEl = focusEl('focus-time');
   const ringEl = focusEl('focus-ring');
@@ -2505,6 +3053,7 @@ function renderFocusDisplay() {
       : 'Focus timer';
   }
   renderFocusMini();
+  syncFocusBar(); // keep the focus bar (and the unsummon state) in sync
 }
 
 // Slim top bar under the planner header: shows the focused task + the

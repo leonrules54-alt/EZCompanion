@@ -88,6 +88,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('alt-dim', handler);
   },
 
+  // Focus session: while a timer runs, the planner unsummons into a slim
+  // focus bar (focusbar.html). The planner renderer streams the session
+  // state here; main shows/hides the bar and relays bar button commands.
+  setFocusSession: (state) => ipcRenderer.send('focus-session', state),
+  onFocusBarState: (callback) => {
+    const handler = (event, state) => callback(state);
+    ipcRenderer.on('focus-bar-state', handler);
+    return () => ipcRenderer.removeListener('focus-bar-state', handler);
+  },
+  focusBarCmd: (action) => ipcRenderer.send('focus-bar-cmd', action),
+  onFocusBarCmd: (callback) => {
+    const handler = (event, data) => callback(data);
+    ipcRenderer.on('focus-bar-cmd', handler);
+    return () => ipcRenderer.removeListener('focus-bar-cmd', handler);
+  },
+
   // Floating launcher button window
   onButtonHover: (callback) => {
     const handler = (event, state) => callback(state);
@@ -96,6 +112,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   setRingOpen: (open) => ipcRenderer.send('button-ring-open', !!open),
 
+  // Assistant window + chat
+  openAssistant: () => ipcRenderer.send('open-assistant'),
+  closeAssistant: () => ipcRenderer.send('assistant-close'),
+  sendAssistantMessage: (text) => ipcRenderer.send('assistant-message', text),
+  onAssistantReply: (callback) => {
+    const handler = (event, reply) => callback(reply);
+    ipcRenderer.on('assistant-reply', handler);
+    return () => ipcRenderer.removeListener('assistant-reply', handler);
+  },
+  // The planner renderer answers assistant messages (it owns the data).
+  onAssistantMessage: (callback) => {
+    const handler = (event, data) => callback(data);
+    ipcRenderer.on('assistant-message', handler);
+    return () => ipcRenderer.removeListener('assistant-message', handler);
+  },
+  sendAssistantReply: (reply) => ipcRenderer.send('assistant-reply', reply),
+
   // Clipboard history
   getClipboardHistory: () => ipcRenderer.invoke('get-clipboard-history'),
   onClipboardHistory: (callback) => {
@@ -103,8 +136,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('clipboard-history', handler);
     return () => ipcRenderer.removeListener('clipboard-history', handler);
   },
-  deleteClipboardItem: (text) => ipcRenderer.send('delete-clipboard-item', text),
+  deleteClipboardItem: (key) => ipcRenderer.send('delete-clipboard-item', key),
   clearClipboardHistory: () => ipcRenderer.send('clear-clipboard-history'),
+  getClipboardImage: (hash) => ipcRenderer.invoke('get-clipboard-image', hash),
+  writeClipboardImage: (hash) => ipcRenderer.invoke('write-clipboard-image', hash),
 
   // Listeners
   onWindowBlurred: (callback) => {

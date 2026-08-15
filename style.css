@@ -10,12 +10,18 @@
   --bg-0: #070b16;
   --bg-1: #0d1322;
   --bg-2: #131b33;
-  --text-main: #e8edff;
-  --text-dim: #9dabcf;
+  --text-main: #f6f9ff;
+  --text-dim: #cdd8f5;
   --glass-bg: rgba(13, 19, 34, 0.78);
   --glass-bg-deep: rgba(9, 14, 27, 0.94);
-  --glass-border: rgba(255, 255, 255, 0.12);
-  --glass-border-bright: rgba(255, 255, 255, 0.22);
+  /* Borders/sheens were too faint (3–12% alpha) — the glass edges vanished
+     against bright wallpapers. These tokens are shared by the planner,
+     popups and modals, so strengthening them lifts the whole UI. */
+  /* Outer edges stay calm (a clean, readable frame); the vibrance lives in
+     the INNER borders — --hairline/--hairline-strong below are the
+     violet-tinted separators between sections, panels and rows. */
+  --glass-border: rgba(167, 139, 250, 0.35);
+  --glass-border-bright: rgba(224, 226, 255, 0.5);
   --accent-cyan: #22d3ee;
   --accent-violet: #8b5cf6;
   --accent-pink: #ec4899;
@@ -24,26 +30,28 @@
   --accent-blue: #60a5fa;
   /* Themeable surface tokens — themes (body[data-theme=…]) swap these so the
      whole planner recolors without touching individual rules. */
-  --surface-row: rgba(255, 255, 255, 0.10);
-  --surface-row-strong: rgba(255, 255, 255, 0.16);
-  --surface-panel: rgba(255, 255, 255, 0.07);
-  --surface-chip: rgba(255, 255, 255, 0.13);
-  --surface-btn: rgba(255, 255, 255, 0.08);
-  --surface-btn-hover: rgba(255, 255, 255, 0.32);
-  --surface-input: rgba(255, 255, 255, 0.08);
-  --hairline: rgba(255, 255, 255, 0.09);
-  --hairline-strong: rgba(255, 255, 255, 0.16);
-  --check-ring: rgba(255, 255, 255, 0.28);
+  --surface-row: rgba(255, 255, 255, 0.12);
+  --surface-row-strong: rgba(255, 255, 255, 0.22);
+  --surface-panel: rgba(255, 255, 255, 0.09);
+  --surface-chip: rgba(255, 255, 255, 0.16);
+  --surface-btn: rgba(255, 255, 255, 0.10);
+  --surface-btn-hover: rgba(255, 255, 255, 0.36);
+  --surface-input: rgba(255, 255, 255, 0.10);
+  --hairline: rgba(148, 163, 255, 0.55);
+  --hairline-strong: rgba(167, 139, 250, 0.95);
+  --check-ring: rgba(255, 255, 255, 0.4);
   --scroll-thumb: rgba(255, 255, 255, 0.2);
-  --glass-sheen: rgba(255, 255, 255, 0.12);
-  --glass-sheen-2: rgba(255, 255, 255, 0.03);
-  --glass-sheen-3: rgba(9, 14, 27, 0.55);
-  --divider-text: rgba(143, 156, 196, 0.75);
-  --divider-line: rgba(255, 255, 255, 0.18);
+  --glass-sheen: rgba(255, 255, 255, 0.22);
+  --glass-sheen-2: rgba(255, 255, 255, 0.08);
+  --glass-sheen-3: rgba(9, 14, 27, 0.7);
+  /* (gradient accent removed — panels are now flat surfaces with strong borders) */
+  --glass-border-top: 2px solid rgba(255, 255, 255, 0.55);
+  --divider-text: rgba(165, 180, 252, 0.95);
+  --divider-line: rgba(167, 139, 250, 0.75);
   --placeholder: rgba(157, 171, 207, 0.7);
   --shadow-pop:
     0 14px 48px rgba(0, 0, 0, 0.55),
-    0 0 0 1px rgba(255, 255, 255, 0.06),
+    0 0 0 1px rgba(255, 255, 255, 0.12),
     inset 0 1px 0 rgba(255, 255, 255, 0.14);
   --radius: 18px;
   --ease-pop: cubic-bezier(0.22, 0.61, 0.36, 1);
@@ -57,7 +65,8 @@ body {
   font-family: 'Comfortaa', 'Segoe UI', system-ui, sans-serif;
   overflow: hidden;
   user-select: none;
-  background: radial-gradient(120% 120% at 20% 10%, #16203d 0%, #0c1224 45%, #070b16 100%);
+  /* Default page: a diagonal sweep from a lighter slate down to black. */
+  background: #0d1322;
   color: var(--text-main);
   -webkit-app-region: no-drag;
   cursor: default;
@@ -111,8 +120,7 @@ body.electron-mode #tasks-panel:not(.panel-hidden),
 body.electron-mode #tasks-panel:not(.panel-hidden) .panel-glass,
 body.electron-mode #settings-panel:not(.panel-hidden) .panel-glass,
 body.electron-mode #task-modal,
-body.electron-mode #categories-panel:not(.panel-hidden) .cat-sidebar,
-body.electron-mode #theme-palette:not(.palette-hidden) {
+body.electron-mode #categories-panel:not(.panel-hidden) .cat-sidebar {
   pointer-events: auto;
 }
 
@@ -150,16 +158,14 @@ body.electron-mode #browser-launcher {
   border-radius: 50%;
   /* Layered color-shifting glass: a white sheen over a violet→cyan→pink→
      mint gradient with a soft indigo bloom in the corner. */
-  background:
-    linear-gradient(165deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0.05) 38%, rgba(99, 102, 241, 0.10) 80%),
-    linear-gradient(135deg, rgba(139, 92, 246, 0.32), rgba(56, 189, 248, 0.16) 34%, rgba(236, 72, 153, 0.20) 68%, rgba(52, 211, 153, 0.14)),
-    radial-gradient(circle at 32% 26%, rgba(167, 139, 250, 0.5), rgba(20, 28, 54, 0.22) 62%);
+  background: rgba(9, 14, 27, 0.62);
   backdrop-filter: blur(16px) saturate(1.5) brightness(1.08);
   -webkit-backdrop-filter: blur(16px) saturate(1.5) brightness(1.08);
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  border: 1.5px solid rgba(167, 139, 250, 0.5);
   box-shadow:
     0 14px 52px rgba(0, 0, 0, 0.55),
-    0 0 140px rgba(139, 92, 246, 0.4),
+    0 0 140px rgba(139, 92, 246, 0.5),
+    0 0 0 2px rgba(167, 139, 250, 0.6),
     inset 0 1px 0 rgba(255, 255, 255, 0.38),
     inset 0 -1px 0 rgba(0, 0, 0, 0.3);
   -webkit-mask: radial-gradient(circle, transparent 0 88px, #000 90px 100%);
@@ -185,8 +191,8 @@ body.electron-mode #browser-launcher {
     rgba(167, 139, 250, 1) 87.5%,
     rgba(99, 102, 241, 1) 100%
   );
-  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 6px), #000 calc(100% - 4px));
-  mask: radial-gradient(farthest-side, transparent calc(100% - 6px), #000 calc(100% - 4px));
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 10px), #000 calc(100% - 6px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 10px), #000 calc(100% - 6px));
   /* Rainbow: the conic border spins AND its hue slowly cycles the full
      spectrum, so the neon ring never looks static. */
   animation: ringSpin 12s linear infinite, ringHue 9s linear infinite;
@@ -223,8 +229,7 @@ body.electron-mode #browser-launcher {
   border-radius: 50%;
   pointer-events: none;
   z-index: 1;
-  background:
-    linear-gradient(115deg, transparent 18%, rgba(255, 255, 255, 0.34) 38%, rgba(167, 139, 250, 0.28) 48%, rgba(56, 189, 248, 0.18) 58%, transparent 78%);
+  display: none;
   background-size: 260% 260%;
   background-position: 220% 50%;
   -webkit-mask: radial-gradient(circle, transparent 0 88px, #000 90px 100%);
@@ -264,8 +269,8 @@ body.electron-mode #browser-launcher {
   /* Fill comes from the per-action <linearGradient> url() built in JS
      (Chromium can't take a gradient via CSS in SVG fill). CSS only handles
      stroke + the hover pop/glow below. */
-  stroke: rgba(255, 255, 255, 0.45);
-  stroke-width: 1.2;
+  stroke: rgba(255, 255, 255, 0.65);
+  stroke-width: 1.6;
   transition: fill 0.2s ease, stroke 0.2s ease, filter 0.2s ease;
   filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.25));
 }
@@ -284,8 +289,8 @@ body.electron-mode #browser-launcher {
    even if the glyph's own metrics drift, the button reads as the target. */
 .ring-seg .seg-btn {
   /* fill comes from the url(#seg-grad-btn-<action>) gradient built in JS */
-  stroke: rgba(255, 255, 255, 0.6);
-  stroke-width: 1.3;
+  stroke: rgba(255, 255, 255, 0.75);
+  stroke-width: 1.6;
   transform-box: fill-box;
   transform-origin: center;
   filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.42)) drop-shadow(0 0 10px var(--glow));
@@ -315,6 +320,7 @@ body.electron-mode #browser-launcher {
    built in renderer.js — Chromium can't take gradients in SVG fill via CSS). */
 .ring-seg[data-action="info"]       { --glow: #38bdf8; --glow-fill: rgba(56, 189, 248, 0.4); }
 .ring-seg[data-action="clipboard"]  { --glow: #2dd4bf; --glow-fill: rgba(45, 212, 191, 0.38); }
+.ring-seg[data-action="assistant"]  { --glow: #e879f9; --glow-fill: rgba(232, 121, 249, 0.4); }
 .ring-seg[data-action="notes"]      { --glow: #fbbf24; --glow-fill: rgba(251, 191, 36, 0.38); }
 .ring-seg[data-action="tasks"]      { --glow: #34d399; --glow-fill: rgba(52, 211, 153, 0.38); }
 .ring-seg[data-action="screenshot"] { --glow: #f472b6; --glow-fill: rgba(244, 114, 182, 0.42); }
@@ -380,13 +386,11 @@ body.electron-mode #browser-launcher {
 
 .popup-glass,
 .panel-glass {
-  background:
-    linear-gradient(165deg, var(--glass-sheen), var(--glass-sheen-2) 36%, var(--glass-sheen-3) 100%),
-    var(--glass-bg-deep);
+  background: var(--glass-bg-deep);
   backdrop-filter: blur(14px) saturate(1.25) brightness(1.04);
   -webkit-backdrop-filter: blur(14px) saturate(1.25) brightness(1.04);
-  border: 1px solid var(--glass-border);
-  border-top: 1px solid var(--glass-border-bright);
+  border: 2px solid var(--glass-border-bright);
+  border-top: var(--glass-border-top);
   border-radius: var(--radius);
   padding: 20px 22px;
   box-shadow: var(--shadow-pop);
@@ -404,7 +408,7 @@ body.electron-mode #browser-launcher {
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1.5px solid rgba(255, 255, 255, 0.3);
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.09);
   backdrop-filter: blur(6px);
@@ -422,8 +426,8 @@ body.electron-mode #browser-launcher {
   opacity: 1;
   color: var(--text-main);
   background: rgba(255, 255, 255, 0.18);
-  border-color: rgba(255, 255, 255, 0.45);
-  box-shadow: 0 0 12px rgba(129, 140, 248, 0.4);
+  border-color: rgba(255, 255, 255, 0.65);
+  box-shadow: 0 0 12px rgba(129, 140, 248, 0.5);
   transform: scale(1.1);
 }
 
@@ -440,13 +444,16 @@ body.electron-mode #browser-launcher {
   font-weight: 700;
   color: var(--text-main);
   letter-spacing: -0.02em;
-  text-shadow: 0 0 24px rgba(99, 102, 241, 0.25);
+  text-shadow: 0 0 24px rgba(129, 140, 248, 0.45);
 }
 
 .popup-date {
   font-size: 13px;
-  color: var(--text-dim);
-  margin-top: 2px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #c7d2fe;
+  margin-top: 3px;
+  text-shadow: 0 0 14px rgba(129, 140, 248, 0.4);
 }
 
 .popup-divider {
@@ -527,7 +534,7 @@ body.electron-mode #browser-launcher {
   width: 100%;
   padding: 9px 12px 9px 10px;
   border-radius: 12px;
-  border: 1px solid var(--hairline-strong);
+  border: 1.5px solid var(--hairline-strong);
   background: var(--surface-input);
   color: var(--text-main);
   font-family: inherit;
@@ -576,7 +583,7 @@ body.electron-mode #browser-launcher {
   width: 74px;
   padding: 7px 8px;
   border-radius: 12px;
-  border: 1px solid var(--hairline-strong);
+  border: 1.5px solid var(--hairline-strong);
   background: var(--surface-input);
   color: var(--text-main);
   font-family: inherit;
@@ -618,7 +625,7 @@ body.electron-mode #browser-launcher {
   position: absolute;
   inset: 0;
   border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1.5px solid rgba(255, 255, 255, 0.22);
 }
 #focus-panel.running .focus-ring {
   animation: focusPulse 1.6s ease-in-out infinite;
@@ -688,7 +695,7 @@ body.electron-mode #browser-launcher {
   padding: 5px 9px;
   border-radius: 9px;
   background: rgba(255, 255, 255, 0.05);
-  border: 1px solid var(--hairline);
+  border: 1.5px solid var(--hairline);
 }
 .fh-item .fh-name {
   flex: 1;
@@ -712,7 +719,7 @@ body.electron-mode #browser-launcher {
   white-space: nowrap;
 }
 .focus-start {
-  background: linear-gradient(135deg, rgba(163, 230, 53, 0.32), rgba(52, 211, 153, 0.18));
+  background: rgba(163, 230, 53, 0.3);
   border-color: rgba(163, 230, 53, 0.55);
 }
 .focus-start:hover {
@@ -783,7 +790,7 @@ body.electron-mode #browser-launcher {
   background: var(--surface-panel);
   backdrop-filter: blur(10px) saturate(1.3);
   -webkit-backdrop-filter: blur(10px) saturate(1.3);
-  border: 1px solid var(--hairline);
+  border: 1.5px solid var(--hairline);
   border-radius: 10px;
   font-size: 11px;
   color: var(--text-main);
@@ -817,7 +824,7 @@ body.electron-mode #browser-launcher {
   flex-shrink: 0;
   width: 18px;
   height: 18px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1.5px solid rgba(255, 255, 255, 0.22);
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.12);
   backdrop-filter: blur(6px);
@@ -832,12 +839,148 @@ body.electron-mode #browser-launcher {
   transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
 
+.vault-item-img {
+  align-items: center;
+}
+
+.vault-img {
+  width: 62px;
+  height: 44px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1.5px solid var(--hairline);
+  background: rgba(255, 255, 255, 0.05);
+  flex-shrink: 0;
+}
+
 .vault-del:hover {
   background: rgba(244, 63, 94, 0.75);
   color: #fff;
 }
 
 .vault-clear { margin-top: 10px; }
+
+/* === Assistant (chat that manages your day) === */
+#assistant-panel {
+  position: absolute;
+  top: 52px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 260; /* above the always-visible planner (210) */
+  transition: all 0.35s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+#assistant-panel.popup-hidden {
+  opacity: 0;
+  transform: translateX(-50%) translateY(10px) scale(0.95);
+  pointer-events: none;
+}
+
+.assistant-glass {
+  width: 272px;
+  padding-bottom: 12px;
+}
+
+.assistant-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-main);
+  margin-bottom: 8px;
+  letter-spacing: 0.02em;
+}
+
+.assistant-msgs {
+  max-height: 205px;
+  overflow-y: auto;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+  padding-right: 2px;
+}
+
+.a-msg {
+  max-width: 92%;
+  padding: 7px 10px;
+  border-radius: 12px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.a-bot {
+  align-self: flex-start;
+  background: var(--surface-panel);
+  border: 1.5px solid var(--hairline);
+  border-bottom-left-radius: 4px;
+  color: var(--text-main);
+}
+
+.a-user {
+  align-self: flex-end;
+  background: rgba(139, 92, 246, 0.28);
+  border: 1.5px solid rgba(167, 139, 250, 0.5);
+  border-bottom-right-radius: 4px;
+  color: #f5f3ff;
+}
+
+.assistant-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 8px;
+}
+
+.assistant-chips .chip {
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  color: #c7d2fe;
+  background: rgba(99, 102, 241, 0.16);
+  border: 1.5px solid rgba(148, 163, 255, 0.4);
+  border-radius: 999px;
+  padding: 4px 9px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+
+.assistant-chips .chip:hover {
+  background: rgba(99, 102, 241, 0.32);
+  border-color: rgba(167, 139, 250, 0.85);
+  box-shadow: 0 0 10px rgba(139, 92, 246, 0.3);
+}
+
+.assistant-input-row {
+  display: flex;
+  gap: 6px;
+}
+
+#assistant-input {
+  flex: 1;
+  min-width: 0;
+  font-family: inherit;
+  font-size: 11.5px;
+  color: var(--text-main);
+  background: var(--surface-input);
+  border: 1.5px solid var(--hairline-strong);
+  border-radius: 10px;
+  padding: 8px 10px;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+#assistant-input:focus {
+  border-color: rgba(167, 139, 250, 0.9);
+  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.25);
+}
+
+#assistant-send {
+  flex-shrink: 0;
+  padding: 0 13px;
+  border-radius: 10px;
+}
 
 /* === Planner: Deadlines (top half) + Daily Tasks (bottom half) ===
    Always-visible glass panel filling the top-right sidebar from the very
@@ -874,14 +1017,19 @@ body.electron-mode #browser-launcher {
   flex-direction: column;
   text-align: left;
   border-radius: 20px;
-  background:
-    linear-gradient(165deg, var(--glass-sheen), var(--glass-sheen-2) 36%, var(--glass-sheen-3) 100%),
-    var(--glass-bg-deep);
+  background: var(--glass-bg-deep);
   backdrop-filter: blur(12px) saturate(1.2) brightness(1.04);
   -webkit-backdrop-filter: blur(12px) saturate(1.2) brightness(1.04);
-  border: 1px solid var(--glass-border);
-  border-top: 1px solid var(--glass-border-bright);
-  box-shadow: var(--shadow-pop);
+  border: 2.5px solid var(--glass-border-bright);
+  border-top: var(--glass-border-top);
+  /* Calm outer frame: a soft violet outline + faint bloom, so the edge
+     reads as glass rather than neon. */
+  box-shadow:
+    var(--shadow-pop),
+    0 0 0 1.5px rgba(167, 139, 250, 0.28),
+    0 0 26px rgba(139, 92, 246, 0.18),
+    -8px 8px 30px rgba(34, 211, 238, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
   overflow: hidden;
   transform-origin: top right;
   transition: transform 0.35s cubic-bezier(0.22, 0.61, 0.36, 1), opacity 0.35s ease;
@@ -922,8 +1070,8 @@ body.electron-mode #browser-launcher {
   align-items: center;
   justify-content: center;
   font-size: 12px;
-  background: linear-gradient(135deg, rgba(52, 211, 153, 0.3), rgba(139, 92, 246, 0.34));
-  border: 1px solid rgba(167, 139, 250, 0.35);
+  background: rgba(139, 92, 246, 0.3);
+  border: 1.5px solid rgba(167, 139, 250, 0.6);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
@@ -945,8 +1093,8 @@ body.electron-mode #browser-launcher {
   letter-spacing: 0.02em;
   color: #fffbeb;
   white-space: nowrap;
-  background: linear-gradient(135deg, rgba(251, 191, 36, 0.2), rgba(244, 63, 94, 0.16));
-  border: 1px solid rgba(251, 191, 36, 0.4);
+  background: rgba(251, 191, 36, 0.22);
+  border: 1.5px solid rgba(251, 191, 36, 0.55);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 0 14px rgba(251, 191, 36, 0.28);
   text-shadow: 0 0 8px rgba(251, 191, 36, 0.6);
   transition: all 0.2s;
@@ -961,7 +1109,7 @@ body.electron-mode #browser-launcher {
   width: 26px;
   height: 26px;
   border-radius: 9px;
-  border: 1px solid var(--hairline-strong);
+  border: 1.5px solid var(--hairline-strong);
   background: var(--surface-btn);
   color: var(--text-main);
   font-size: 15px;
@@ -989,7 +1137,7 @@ body.electron-mode #browser-launcher {
   gap: 6px;
   padding: 8px 12px 6px;
   border-bottom: 1px solid var(--hairline);
-  background: linear-gradient(180deg, rgba(99, 102, 241, 0.07), transparent);
+  background: transparent;
 }
 
 /* Slim focus session bar: task name + live countdown, tucked under the top
@@ -1003,8 +1151,8 @@ body.electron-mode #browser-launcher {
   font-size: 11px;
   font-weight: 700;
   color: #f7fee7;
-  background: linear-gradient(135deg, rgba(163, 230, 53, 0.18), rgba(34, 211, 238, 0.12));
-  border: 1px solid rgba(163, 230, 53, 0.4);
+  background: rgba(163, 230, 53, 0.16);
+  border: 1.5px solid rgba(163, 230, 53, 0.55);
   box-shadow: 0 0 14px rgba(163, 230, 53, 0.18);
   cursor: pointer;
   transition: box-shadow 0.2s, transform 0.2s;
@@ -1044,7 +1192,7 @@ body.electron-mode #browser-launcher {
   font-weight: 800;
   letter-spacing: 0.07em;
   text-transform: uppercase;
-  color: var(--text-dim);
+  color: var(--text-main);
 }
 .daily-progress-pct {
   color: #bef264;
@@ -1062,7 +1210,7 @@ body.electron-mode #browser-launcher {
   height: 100%;
   width: 0%;
   border-radius: 999px;
-  background: linear-gradient(90deg, #a3e635, #34d399, #22d3ee);
+  background: #a3e635;
   box-shadow: 0 0 14px rgba(163, 230, 53, 0.55);
   transition: width 0.5s cubic-bezier(0.22, 0.61, 0.36, 1);
 }
@@ -1098,7 +1246,7 @@ body.electron-mode #browser-launcher {
   display: flex;
   flex-direction: column;
   background: var(--surface-panel);
-  border: 1px solid var(--hairline);
+  border: 1.5px solid var(--hairline);
   border-radius: 14px;
   overflow: hidden;
 }
@@ -1140,7 +1288,7 @@ body.electron-mode #browser-launcher {
   text-align: center;
   padding: 3px 8px;
   border-radius: 8px;
-  border: 1px solid var(--hairline-strong);
+  border: 1.5px solid var(--hairline-strong);
   background: var(--surface-btn);
   color: var(--text-dim);
   font-family: inherit;
@@ -1157,10 +1305,10 @@ body.electron-mode #browser-launcher {
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
 }
 .fchip.active {
-  background: linear-gradient(135deg, rgba(34, 211, 238, 0.35), rgba(139, 92, 246, 0.45));
+  background: rgba(139, 92, 246, 0.75);
   border-color: rgba(167, 139, 250, 0.7);
   color: #fff;
-  box-shadow: 0 0 10px rgba(139, 92, 246, 0.35);
+  box-shadow: 0 0 14px rgba(139, 92, 246, 0.55);
 }
 
 /* Both halves scroll with the same slim glass scrollbar */
@@ -1209,16 +1357,14 @@ body.electron-mode #browser-launcher {
   max-height: calc(100vh - 40px);
   overflow-y: auto;
   text-align: center;
-  background:
-    linear-gradient(165deg, var(--glass-sheen), var(--glass-sheen-2) 36%, var(--glass-sheen-3) 100%),
-    var(--glass-bg-deep);
+  background: var(--glass-bg-deep);
   backdrop-filter: blur(14px) saturate(1.3) brightness(1.06);
   -webkit-backdrop-filter: blur(14px) saturate(1.3) brightness(1.06);
-  border: 1px solid var(--glass-border);
-  border-top: 1px solid var(--glass-border-bright);
+  border: 2px solid var(--glass-border-bright);
+  border-top: var(--glass-border-top);
   border-radius: 18px;
   padding: 18px;
-  box-shadow: var(--shadow-pop), 0 0 44px rgba(99, 102, 241, 0.32);
+  box-shadow: var(--shadow-pop), 0 0 0 1.5px rgba(167, 139, 250, 0.28), 0 0 26px rgba(139, 92, 246, 0.18);
 }
 .task-modal-glass h3 {
   font-size: 15px;
@@ -1230,7 +1376,7 @@ body.electron-mode #browser-launcher {
   width: 100%;
   padding: 9px 11px;
   border-radius: 10px;
-  border: 1px solid var(--hairline-strong);
+  border: 1.5px solid var(--hairline-strong);
   background: var(--surface-input);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
   color: var(--text-main);
@@ -1258,7 +1404,7 @@ body.electron-mode #browser-launcher {
 /* Mini calendar picker */
 .tm-calendar {
   background: var(--surface-btn);
-  border: 1px solid var(--hairline-strong);
+  border: 1.5px solid var(--hairline-strong);
   border-radius: 12px;
   padding: 8px;
 }
@@ -1273,7 +1419,7 @@ body.electron-mode #browser-launcher {
   width: 22px;
   height: 22px;
   border-radius: 7px;
-  border: 1px solid var(--hairline-strong);
+  border: 1.5px solid var(--hairline-strong);
   background: var(--surface-btn);
   color: var(--text-main);
   font-size: 10px;
@@ -1287,7 +1433,7 @@ body.electron-mode #browser-launcher {
   grid-template-columns: repeat(7, 1fr);
   gap: 2px;
 }
-.tm-cal-dow { font-size: 9px; color: var(--text-dim); padding: 2px 0; }
+.tm-cal-dow { font-size: 9px; font-weight: 700; color: rgba(199, 210, 254, 0.9); padding: 2px 0; }
 .tm-cal-day {
   aspect-ratio: 1;
   border: none;
@@ -1304,9 +1450,9 @@ body.electron-mode #browser-launcher {
 }
 .tm-cal-day:hover { background: var(--surface-btn-hover); }
 .tm-cal-day.other { color: rgba(143, 156, 196, 0.4); }
-.tm-cal-day.today { box-shadow: inset 0 0 0 1px rgba(139, 92, 246, 0.6); }
+.tm-cal-day.today {  box-shadow: inset 0 0 0 1.5px rgba(139, 92, 246, 0.8); }
 .tm-cal-day.selected {
-  background: linear-gradient(135deg, rgba(34, 211, 238, 0.75), rgba(139, 92, 246, 0.85));
+  background: rgba(139, 92, 246, 0.9);
   color: #fff;
   box-shadow: 0 0 10px rgba(139, 92, 246, 0.45);
 }
@@ -1323,7 +1469,7 @@ body.electron-mode #browser-launcher {
   width: 56px;
   height: 24px;
   border-radius: 8px;
-  border: 1px solid var(--hairline-strong);
+  border: 1.5px solid var(--hairline-strong);
   background: var(--surface-btn);
   color: var(--text-main);
   font-size: 9px;
@@ -1336,9 +1482,14 @@ body.electron-mode #browser-launcher {
   width: 56px;
   height: 102px;
   overflow-y: scroll;
-  scroll-snap-type: y mandatory;
+  /* proximity (not mandatory) + smooth behavior: the mouse wheel scrolls
+     naturally and the picker settles on the nearest value instead of
+     ratcheting one item per notch (that felt fast and jumpy). Programmatic
+     scrolls (click a value, tap ▲/▼) glide smoothly too. */
+  scroll-snap-type: y proximity;
+  scroll-behavior: smooth;
   background: var(--surface-btn);
-  border: 1px solid var(--hairline-strong);
+  border: 1.5px solid var(--hairline-strong);
   border-radius: 10px;
   /* Slim, clean grab bar instead of the chunky OS scrollbar */
   scrollbar-width: thin;
@@ -1362,7 +1513,7 @@ body.electron-mode #browser-launcher {
   transform: translateY(-50%);
   border-radius: 8px;
   background: rgba(139, 92, 246, 0.16);
-  border: 1px solid rgba(167, 139, 250, 0.35);
+  border: 1.5px solid rgba(167, 139, 250, 0.6);
   pointer-events: none;
 }
 .tm-wheel-pad { height: 34px; flex-shrink: 0; }
@@ -1402,7 +1553,7 @@ body.electron-mode #browser-launcher {
 }
 
 /* Category color accent on task cards (left border + glowing dot) */
-.item-row.has-cat { border-left: 3px solid var(--cat-color); }
+.item-row.has-cat { border-left: 4px solid var(--cat-color); }
 .cat-dot {
   flex-shrink: 0;
   width: 8px;
@@ -1414,7 +1565,10 @@ body.electron-mode #browser-launcher {
 
 /* Daily task rows use the same compact height as deadline rows */
 
-/* === Planner rows: one compact line [check name date-time due edit delete] === */
+/* === Planner rows: one compact line [check name date-time due edit delete] ===
+   Each row's background is a soft diagonal GRADIENT (cyan → violet → pink →
+   mint tints) over the theme surface, so the list never reads as flat solid
+   color. */
 .item-row {
   display: flex;
   align-items: center;
@@ -1422,16 +1576,23 @@ body.electron-mode #browser-launcher {
   padding: 4px 7px;
   margin-bottom: 4px;
   background: var(--surface-row);
-  border: 1px solid var(--hairline);
+  border: 1.5px solid var(--hairline-strong);
   border-radius: 10px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
   transition: background 0.15s, border-color 0.15s, box-shadow 0.15s, transform 0.15s;
 }
 .item-row:hover {
   background: var(--surface-row-strong);
-  border-color: var(--hairline-strong);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 3px 10px rgba(0, 0, 0, 0.16);
+  border-color: rgba(255, 255, 255, 0.4);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 3px 10px rgba(0, 0, 0, 0.16);
   transform: translateY(-1px);
+}
+/* Category-accented rows lead with their own colour's gradient sweep. */
+.item-row.has-cat {
+  background: color-mix(in srgb, var(--cat-color) 14%, transparent);
+}
+.item-row.has-cat:hover {
+  background: color-mix(in srgb, var(--cat-color) 20%, transparent);
 }
 
 /* Browser-preview hover card (Electron uses its own hover-card window to
@@ -1442,9 +1603,7 @@ body.electron-mode #browser-launcher {
   width: 292px;
   padding: 12px 13px;
   border-radius: 15px;
-  background:
-    linear-gradient(165deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.05) 38%, rgba(99, 102, 241, 0.10) 78%),
-    rgba(10, 15, 30, 0.94);
+  background: rgba(10, 15, 30, 0.94);
   backdrop-filter: blur(16px) saturate(1.4);
   -webkit-backdrop-filter: blur(16px) saturate(1.4);
   border: 1px solid rgba(255, 255, 255, 0.28);
@@ -1492,7 +1651,7 @@ body.electron-mode #browser-launcher {
   height: 100%;
   width: 0%;
   border-radius: 999px;
-  background: linear-gradient(90deg, #a3e635, #34d399);
+  background: #a3e635;
 }
 
 /* Round done-toggle - fills green and pops the check when completed */
@@ -1502,7 +1661,7 @@ body.electron-mode #browser-launcher {
   width: 21px;
   height: 21px;
   border-radius: 50%;
-  border: 1.5px solid var(--check-ring);
+  border: 2px solid var(--check-ring);
   background: rgba(255, 255, 255, 0.04);
   color: transparent;
   font-size: 11px;
@@ -1519,7 +1678,7 @@ body.electron-mode #browser-launcher {
   position: absolute;
   inset: 0;
   border-radius: 50%;
-  background: linear-gradient(180deg, var(--accent-emerald), #22c55e);
+  background: #22c55e;
   transform: scaleY(0);
   transform-origin: 50% 100%;
   transition: transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -1549,7 +1708,7 @@ body.electron-mode #browser-launcher {
   top: 54%;
   height: 1.6px;
   border-radius: 2px;
-  background: linear-gradient(90deg, var(--accent-emerald), #22c55e);
+  background: #22c55e;
   transform: scaleX(0);
   transform-origin: left;
   animation: strikeLine 0.45s ease-out forwards;
@@ -1577,32 +1736,49 @@ body.electron-mode #browser-launcher {
   font-weight: 700;
   padding: 3px 7px;
   border-radius: 8px;
-  background: var(--surface-chip);
-  border: 1px solid var(--hairline);
-  color: var(--text-dim);
+  background: rgba(255, 255, 255, 0.14);
+  border: 1.5px solid var(--hairline-strong);
+  color: #dbe4ff;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
 
-/* Compact "due" clock chip: (5m) (2h) (1d) (3d) — colored by urgency;
-   done turns green, overdue pulses red. */
+/* Compact "due" clock badge — drawn as a CIRCLE around the number (5m, 2h,
+   1d); colored by urgency, done turns green, overdue pulses red. Words
+   (Overdue / Done / —) become slim pills instead. */
 .due-chip {
   flex-shrink: 0;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 2px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font-size: 9px;
   font-weight: 800;
-  padding: 2px 6px;
-  border-radius: 7px;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
-  background: var(--surface-chip);
-  border: 1px solid var(--hairline);
-  color: var(--text-dim);
+  background: rgba(255, 255, 255, 0.14);
+  border: 2px solid var(--hairline-strong);
+  color: #e2e8f0;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
-.due-chip.past  { background: rgba(244, 63, 94, 0.25); color: #fecdd3; border-color: rgba(244, 63, 94, 0.55); animation: markerPulse 1.6s ease-in-out infinite; }
-.due-chip.today { background: rgba(244, 63, 94, 0.18); color: #fda4af; border-color: rgba(244, 63, 94, 0.45); }
-.due-chip.close { background: rgba(251, 191, 36, 0.16); color: #fde68a; border-color: rgba(251, 191, 36, 0.4); }
-.due-chip.soon  { background: rgba(251, 146, 60, 0.16); color: #fdba74; border-color: rgba(251, 146, 60, 0.38); }
-.due-chip.done  { background: rgba(52, 211, 153, 0.18); color: #6ee7b7; border-color: rgba(52, 211, 153, 0.45); }
+/* Words are too long for a circle → slim rounded pill. */
+.due-chip.past,
+.due-chip.done,
+.due-chip:not(.today):not(.close):not(.soon) {
+  height: 20px;
+  min-width: auto;
+  width: auto;
+  padding: 0 8px;
+  border-radius: 999px;
+}
+.due-chip.past  { background: rgba(244, 63, 94, 0.34); color: #ffe4e6; border-color: rgba(244, 63, 94, 0.7); box-shadow: 0 0 12px rgba(244, 63, 94, 0.35); animation: markerPulse 1.6s ease-in-out infinite; }
+.due-chip.today { background: rgba(244, 63, 94, 0.26); color: #fecdd3; border-color: rgba(244, 63, 94, 0.6); box-shadow: 0 0 12px rgba(244, 63, 94, 0.3); }
+.due-chip.close { background: rgba(251, 191, 36, 0.24); color: #fef3c7; border-color: rgba(251, 191, 36, 0.55); box-shadow: 0 0 12px rgba(251, 191, 36, 0.3); }
+.due-chip.soon  { background: rgba(251, 146, 60, 0.24); color: #ffedd5; border-color: rgba(251, 146, 60, 0.52); box-shadow: 0 0 12px rgba(251, 146, 60, 0.3); }
+.due-chip.done  { background: rgba(52, 211, 153, 0.26); color: #a7f3d0; border-color: rgba(52, 211, 153, 0.6); box-shadow: 0 0 12px rgba(52, 211, 153, 0.32); }
 @keyframes markerPulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.55; }
@@ -1612,7 +1788,7 @@ body.electron-mode #browser-launcher {
   flex-shrink: 0;
   width: 20px;
   height: 20px;
-  border: 1px solid var(--hairline-strong);
+  border: 1.5px solid var(--hairline-strong);
   border-radius: 6px;
   background: var(--surface-btn);
   color: var(--text-dim);
@@ -1630,14 +1806,14 @@ body.electron-mode #browser-launcher {
 .item-act.focus {
   color: #a7f3d0;
   border-color: rgba(52, 211, 153, 0.45);
-  background: linear-gradient(135deg, rgba(52, 211, 153, 0.18), rgba(34, 211, 238, 0.10));
+  background: rgba(52, 211, 153, 0.18);
   font-weight: 800;
   font-size: 11px;
   text-shadow: 0 0 8px rgba(52, 211, 153, 0.6);
   transition: background 0.15s, border-color 0.15s, transform 0.15s, box-shadow 0.15s, filter 0.15s;
 }
 .item-act.focus:hover {
-  background: linear-gradient(135deg, rgba(52, 211, 153, 0.35), rgba(34, 211, 238, 0.22));
+  background: rgba(52, 211, 153, 0.35);
   border-color: rgba(52, 211, 153, 0.9);
   color: #ffffff;
   transform: scale(1.15);
@@ -1652,14 +1828,14 @@ body.electron-mode #browser-launcher {
 .item-act.prog {
   color: #d9f99d;
   border-color: rgba(163, 230, 53, 0.45);
-  background: linear-gradient(135deg, rgba(163, 230, 53, 0.18), rgba(52, 211, 153, 0.10));
+  background: rgba(163, 230, 53, 0.18);
   font-weight: 800;
   font-size: 11.5px;
   text-shadow: 0 0 8px rgba(163, 230, 53, 0.6);
   transition: background 0.15s, border-color 0.15s, transform 0.15s, box-shadow 0.15s, filter 0.15s;
 }
 .item-act.prog:hover {
-  background: linear-gradient(135deg, rgba(163, 230, 53, 0.35), rgba(52, 211, 153, 0.22));
+  background: rgba(163, 230, 53, 0.35);
   border-color: rgba(163, 230, 53, 0.9);
   color: #ffffff;
   transform: scale(1.15) rotate(90deg); /* the ⊕ spins into place */
@@ -1716,7 +1892,7 @@ body.electron-mode #browser-launcher {
   height: 100%;
   width: 0%;
   border-radius: 999px;
-  background: linear-gradient(90deg, #a3e635, #34d399);
+  background: #a3e635;
   box-shadow: 0 0 8px rgba(163, 230, 53, 0.5);
   transition: width 0.4s cubic-bezier(0.22, 0.61, 0.36, 1);
 }
@@ -1743,9 +1919,7 @@ body.electron-mode #browser-launcher {
   width: 210px;
   padding: 10px 12px;
   border-radius: 12px;
-  background:
-    linear-gradient(165deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.04) 40%, rgba(99, 102, 241, 0.10)),
-    rgba(9, 14, 27, 0.95);
+  background: rgba(9, 14, 27, 0.95);
   backdrop-filter: blur(14px) saturate(1.4);
   -webkit-backdrop-filter: blur(14px) saturate(1.4);
   border: 1px solid rgba(255, 255, 255, 0.25);
@@ -1841,7 +2015,7 @@ body.electron-mode #browser-launcher {
   resize: vertical;
   padding: 10px;
   border-radius: 12px;
-  border: 1px solid var(--hairline-strong);
+  border: 1.5px solid var(--hairline-strong);
   background: var(--surface-input);
   backdrop-filter: blur(10px) saturate(1.3);
   -webkit-backdrop-filter: blur(10px) saturate(1.3);
@@ -1889,9 +2063,9 @@ body.electron-mode #browser-launcher {
 .btn:disabled { opacity: 0.4; cursor: default; pointer-events: none; }
 
 .btn-primary {
-  background: linear-gradient(135deg, rgba(34, 211, 238, 0.92), rgba(139, 92, 246, 0.94));
+  background: #22d3ee;
   color: #0b1020;
-  border: 1px solid rgba(255, 255, 255, 0.28);
+  border: 1.5px solid rgba(255, 255, 255, 0.42);
   box-shadow:
     0 3px 14px rgba(99, 102, 241, 0.4),
     inset 0 1px 0 rgba(255, 255, 255, 0.45),
@@ -1908,20 +2082,20 @@ body.electron-mode #browser-launcher {
 
 .btn-ghost {
   background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  border: 1.5px solid rgba(255, 255, 255, 0.28);
   color: var(--text-main);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
 .btn-ghost:hover {
   background: rgba(255, 255, 255, 0.16);
-  border-color: rgba(255, 255, 255, 0.34);
+  border-color: rgba(167, 139, 250, 0.55);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 4px 16px rgba(0, 0, 0, 0.25);
   transform: translateY(-1px);
 }
 
 .btn-danger {
   background: rgba(244, 63, 94, 0.16);
-  border: 1px solid rgba(244, 63, 94, 0.4);
+  border: 1.5px solid rgba(244, 63, 94, 0.55);
   color: #fda4af;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
@@ -1948,7 +2122,7 @@ body.electron-mode #browser-launcher {
   padding: 8px 10px;
   margin-bottom: 5px;
   background: var(--surface-panel);
-  border: 1px solid var(--hairline);
+  border: 1.5px solid var(--hairline);
   border-radius: 10px;
   cursor: pointer;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
@@ -2012,7 +2186,7 @@ body.electron-mode #browser-launcher {
 .cat-chip {
   padding: 5px 10px;
   border-radius: 9px;
-  border: 1px solid var(--hairline-strong);
+  border: 1.5px solid var(--hairline-strong);
   background: var(--surface-btn);
   color: var(--text-dim);
   font-family: inherit;
@@ -2024,7 +2198,7 @@ body.electron-mode #browser-launcher {
 .cat-chip:hover { color: var(--text-main); background: var(--surface-btn-hover); border-color: var(--hairline-strong); }
 .cat-chip.colored { color: var(--cat-color); border-color: var(--cat-color); }
 .cat-chip.sel {
-  background: linear-gradient(135deg, rgba(34, 211, 238, 0.75), rgba(139, 92, 246, 0.85));
+  background: rgba(139, 92, 246, 0.9);
   color: #fff;
   border-color: rgba(167, 139, 250, 0.8);
   box-shadow: 0 0 10px rgba(139, 92, 246, 0.4);
@@ -2058,13 +2232,12 @@ body.electron-mode #browser-launcher {
   display: flex;
   flex-direction: column;
   padding: 14px 12px 12px;
-  background:
-    linear-gradient(165deg, var(--glass-sheen), var(--glass-sheen-2) 36%, var(--glass-sheen-3) 100%),
-    var(--glass-bg-deep);
+  background: var(--glass-bg-deep);
   backdrop-filter: blur(14px) saturate(1.3) brightness(1.04);
   -webkit-backdrop-filter: blur(14px) saturate(1.3) brightness(1.04);
-  border-right: 1px solid var(--glass-border-bright);
-  box-shadow: 12px 0 34px rgba(0, 0, 0, 0.45);
+  /* Vibrant INNER divider — separates the category sidebar from the content. */
+  border-right: 2.5px solid var(--hairline-strong);
+  box-shadow: 12px 0 34px rgba(0, 0, 0, 0.45), 6px 0 22px rgba(139, 92, 246, 0.22);
 }
 .cat-head {
   display: flex;
@@ -2199,12 +2372,26 @@ body.electron-mode #browser-launcher {
   cursor: pointer;
 }
 
+.setting-row input.setting-text {
+  flex: 0 0 190px;
+  max-width: 190px;
+  font-family: inherit;
+  font-size: 11.5px;
+  color: var(--text-main);
+  background: rgba(255, 255, 255, 0.10);
+  border: 1.5px solid var(--hairline);
+  border-radius: 8px;
+  padding: 6px 9px;
+  outline: none;
+}
+.setting-row input.setting-text:focus { border-color: var(--hairline-strong); }
+
 /* === Toast notifications === */
 .toast {
   position: fixed;
   top: 16px;
   right: 16px;
-  background: linear-gradient(165deg, rgba(255, 255, 255, 0.08), rgba(9, 14, 27, 0.78) 40%);
+  background: rgba(9, 14, 27, 0.85);
   backdrop-filter: blur(10px) saturate(1.2);
   -webkit-backdrop-filter: blur(10px) saturate(1.2);
   color: #eef2ff;
@@ -2228,7 +2415,7 @@ body.electron-mode #browser-launcher {
 /* Deadline-reminder toasts: amber (milestone) and red (5-min warning). */
 .toast.toast-alert {
   border-color: rgba(251, 191, 36, 0.55);
-  background: linear-gradient(165deg, rgba(251, 191, 36, 0.18), rgba(9, 14, 27, 0.85) 45%);
+  background: rgba(40, 26, 8, 0.92);
   box-shadow:
     0 10px 34px rgba(0, 0, 0, 0.5),
     0 0 26px rgba(251, 191, 36, 0.45),
@@ -2236,7 +2423,7 @@ body.electron-mode #browser-launcher {
 }
 .toast.toast-warn {
   border-color: rgba(244, 63, 94, 0.7);
-  background: linear-gradient(165deg, rgba(244, 63, 94, 0.24), rgba(9, 14, 27, 0.88) 45%);
+  background: rgba(40, 10, 10, 0.92);
   box-shadow:
     0 10px 40px rgba(0, 0, 0, 0.55),
     0 0 32px rgba(244, 63, 94, 0.55),
@@ -2247,7 +2434,7 @@ body.electron-mode #browser-launcher {
 /* Focus-complete toast: emerald glow. */
 .toast.toast-focus {
   border-color: rgba(163, 230, 53, 0.6);
-  background: linear-gradient(165deg, rgba(163, 230, 53, 0.2), rgba(9, 14, 27, 0.85) 45%);
+  background: rgba(20, 38, 14, 0.92);
   box-shadow:
     0 10px 34px rgba(0, 0, 0, 0.5),
     0 0 26px rgba(163, 230, 53, 0.5),
@@ -2289,9 +2476,7 @@ body.electron-mode #browser-launcher {
   inset: 0;
   border-radius: inherit;
   pointer-events: none;
-  background:
-    radial-gradient(130% 60% at 50% -12%, rgba(255, 255, 255, 0.16), transparent 58%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent 26%);
+  background: transparent;
 }
 .popup-glass::after,
 .panel-glass::after,
@@ -2307,41 +2492,40 @@ body.electron-mode #browser-launcher {
   opacity: 0.25;
 }
 
-/* --- Richer glass panels (overrides core glass fills) --- */
+/* --- Richer glass panels (overrides core glass fills) ---
+   These re-color the borders BRIGHT: the old 14% white made every panel's
+   edge vanish against the screen. The border now reads as a crisp neon
+   outline (violet-tinted white) with a matching outer glow. */
 .popup-glass,
 .panel-glass {
   background:
-    linear-gradient(165deg, rgba(255, 255, 255, 0.13), rgba(255, 255, 255, 0.03) 38%, rgba(9, 14, 27, 0.62) 100%),
-    radial-gradient(120% 90% at 50% -10%, rgba(99, 102, 241, 0.10), transparent 55%),
     var(--glass-bg-deep);
   box-shadow:
     0 12px 40px rgba(0, 0, 0, 0.5),
-    0 0 0 1px rgba(255, 255, 255, 0.07),
-    0 0 34px rgba(99, 102, 241, 0.14),
+    0 0 0 1.5px rgba(167, 139, 250, 0.28),
+    0 0 24px rgba(139, 92, 246, 0.16),
+    -6px 6px 24px rgba(34, 211, 238, 0.06),
     inset 0 1px 0 rgba(255, 255, 255, 0.18);
-  border-color: rgba(255, 255, 255, 0.14);
-  border-top-color: rgba(255, 255, 255, 0.26);
+  border-color: rgba(224, 226, 255, 0.5);
+  border-top-color: rgba(255, 255, 255, 0.6);
 }
 
 .tasks-panel-glass {
   background:
-    linear-gradient(165deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0.03) 36%, rgba(9, 14, 27, 0.62) 100%),
-    radial-gradient(120% 70% at 85% -10%, rgba(99, 102, 241, 0.12), transparent 55%),
     var(--glass-bg-deep);
   box-shadow:
     0 14px 44px rgba(0, 0, 0, 0.5),
-    0 0 0 1px rgba(255, 255, 255, 0.06),
-    0 0 34px rgba(99, 102, 241, 0.12),
+    0 0 0 1.5px rgba(167, 139, 250, 0.28),
+    0 0 26px rgba(139, 92, 246, 0.18),
+    -8px 8px 28px rgba(34, 211, 238, 0.07),
     inset 0 1px 0 rgba(255, 255, 255, 0.16);
-  border-color: rgba(255, 255, 255, 0.14);
-  border-top-color: rgba(255, 255, 255, 0.24);
+  border-color: rgba(224, 226, 255, 0.5);
+  border-top-color: rgba(255, 255, 255, 0.6);
 }
 
 /* Modal backdrop: soft vignette + indigo bloom instead of a flat shade */
 .task-modal {
-  background:
-    radial-gradient(120% 100% at 50% 0%, rgba(99, 102, 241, 0.12), transparent 55%),
-    rgba(6, 10, 20, 0.6);
+  background: rgba(6, 10, 20, 0.62);
   backdrop-filter: blur(10px) saturate(1.2);
   -webkit-backdrop-filter: blur(10px) saturate(1.2);
 }
@@ -2354,24 +2538,15 @@ body.electron-mode #browser-launcher {
 }
 
 /* --- Planner header + section titles: gentle glow --- */
-.tasks-panel-header { background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent); }
+.tasks-panel-header {  background: transparent; }
 .tasks-panel-title { text-shadow: 0 0 16px rgba(139, 92, 246, 0.4); }
 .section-title { text-shadow: 0 0 14px rgba(139, 92, 246, 0.35); }
 .deadlines-half .section-title { text-shadow: 0 0 12px rgba(244, 114, 182, 0.3); }
 .daily-half .section-title { text-shadow: 0 0 12px rgba(52, 211, 153, 0.3); }
 
 /* --- Info popup details --- */
-/* Gradient-clipped clock text. Guarded by @supports so the time stays
-   readable (solid colour) on any engine that rejects background-clip:text. */
-@supports ((-webkit-background-clip: text) or (background-clip: text)) {
-  .popup-time {
-    background: linear-gradient(180deg, #ffffff, #c7d2fe 70%);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-    text-shadow: none;
-  }
-}
+/* The clock stays SOLID white — gradient-clipped text faded its tail into
+   a dim blue, which read as faint. No clip, no fade. */
 .popup-time { filter: drop-shadow(0 0 18px rgba(99, 102, 241, 0.4)); }
 .popup-divider { background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.22), transparent); }
 
@@ -2383,7 +2558,7 @@ body.electron-mode #browser-launcher {
   inset: 0;
   border-radius: inherit;
   pointer-events: none;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0.04) 42%, transparent 55%);
+  background: transparent;
   opacity: 0.7;
 }
 .btn-primary {
@@ -2418,7 +2593,7 @@ body.electron-mode #browser-launcher {
   box-shadow: 0 3px 10px rgba(0, 0, 0, 0.3);
 }
 .fchip.active {
-  background: linear-gradient(135deg, rgba(34, 211, 238, 0.5), rgba(139, 92, 246, 0.6));
+  background: rgba(139, 92, 246, 0.8);
   border-color: rgba(167, 139, 250, 0.8);
   color: #fff;
   box-shadow: 0 0 14px rgba(139, 92, 246, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.35);
@@ -2487,12 +2662,12 @@ body.electron-mode #browser-launcher {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #ffffff, #c7d2fe);
+  background: #ffffff;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45), inset 0 -1px 0 rgba(99, 102, 241, 0.15);
   transition: transform 0.28s var(--ease-pop);
 }
 .setting-row input[type="checkbox"]:checked {
-  background: linear-gradient(135deg, rgba(34, 211, 238, 0.95), rgba(139, 92, 246, 0.98));
+  background: #22d3ee;
   border-color: rgba(167, 139, 250, 0.75);
   box-shadow: 0 0 14px rgba(139, 92, 246, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.4);
 }
@@ -2600,54 +2775,26 @@ input, textarea { caret-color: var(--accent-cyan); }
   filter: saturate(1.2) brightness(1.15);
 }
 
-/* --- Planner glass: richer color blooms (indigo top-right, cyan bottom-left) --- */
+/* --- Planner glass: richer color blooms (indigo top-right, cyan bottom-left)
+   over the theme's diagonal gradient (light → dark → black) --- */
 .tasks-panel-glass {
   background:
-    linear-gradient(165deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0.03) 36%, rgba(9, 14, 27, 0.62) 100%),
-    radial-gradient(120% 70% at 85% -10%, rgba(99, 102, 241, 0.22), transparent 55%),
-    radial-gradient(120% 90% at 8% 108%, rgba(34, 211, 238, 0.13), transparent 55%),
-    var(--glass-bg-deep);
+    var(--glass-grad, var(--glass-bg-deep));
 }
 
 .popup-glass,
 .panel-glass {
   background:
-    linear-gradient(165deg, rgba(255, 255, 255, 0.13), rgba(255, 255, 255, 0.03) 38%, rgba(9, 14, 27, 0.62) 100%),
-    radial-gradient(120% 90% at 50% -10%, rgba(99, 102, 241, 0.18), transparent 55%),
-    var(--glass-bg-deep);
+    var(--glass-grad, var(--glass-bg-deep));
 }
 
-/* --- Planner + popup titles: gradient text with a soft LED glow --- */
-@supports ((-webkit-background-clip: text) or (background-clip: text)) {
-  .tasks-panel-title {
-    background: linear-gradient(90deg, #eef2ff, #c7d2fe 55%, #a5b4fc);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-    text-shadow: none;
-  }
-  .deadlines-half .section-title {
-    background: linear-gradient(90deg, #fecdd3, #fb7185 55%, #f43f5e);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-    text-shadow: none;
-  }
-  .daily-half .section-title {
-    background: linear-gradient(90deg, #a7f3d0, #34d399 55%, #10b981);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-    text-shadow: none;
-  }
-  .task-modal-glass h3 {
-    background: linear-gradient(90deg, #eef2ff, #c7d2fe 55%, #67e8f9);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-    text-shadow: none;
-  }
-}
+/* --- Planner + popup titles: SOLID strong text (no gradient-clip — a
+   gradient makes the far end of the word fade into a dark shade, which
+   read as "faded" text. Titles now use one solid bright color each.) --- */
+.tasks-panel-title { color: var(--text-main); }
+.deadlines-half .section-title { color: #fda4af; }
+.daily-half .section-title { color: #6ee7b7; }
+.task-modal-glass h3 { color: var(--text-main); }
 .tasks-panel-title { filter: drop-shadow(0 0 10px rgba(99, 102, 241, 0.5)); }
 .deadlines-half .section-title { filter: drop-shadow(0 0 8px rgba(244, 63, 94, 0.45)); }
 .daily-half .section-title { filter: drop-shadow(0 0 8px rgba(52, 211, 153, 0.45)); }
@@ -2655,21 +2802,21 @@ input, textarea { caret-color: var(--accent-cyan); }
 
 /* --- Planner halves: subtle per-section color tint --- */
 .deadlines-half {
-  background: linear-gradient(160deg, rgba(244, 63, 94, 0.10), rgba(255, 255, 255, 0.03) 42%, rgba(255, 255, 255, 0.04));
+  background: rgba(244, 63, 94, 0.07);
 }
 .daily-half {
-  background: linear-gradient(160deg, rgba(52, 211, 153, 0.10), rgba(255, 255, 255, 0.03) 42%, rgba(255, 255, 255, 0.04));
+  background: rgba(52, 211, 153, 0.07);
 }
 
 /* --- LED-style interactive pops --- */
 .tp-btn:hover {
-  background: linear-gradient(135deg, rgba(34, 211, 238, 0.42), rgba(139, 92, 246, 0.52));
+  background: rgba(139, 92, 246, 0.5);
   border-color: rgba(167, 139, 250, 0.75);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35), 0 0 18px rgba(139, 92, 246, 0.5);
 }
 
 .fchip.active {
-  background: linear-gradient(135deg, rgba(34, 211, 238, 0.85), rgba(139, 92, 246, 0.95));
+  background: rgba(139, 92, 246, 0.85);
   border-color: rgba(167, 139, 250, 1);
   box-shadow: 0 0 18px rgba(139, 92, 246, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.4);
 }
@@ -2680,7 +2827,7 @@ input, textarea { caret-color: var(--accent-cyan); }
 }
 
 .tm-cal-day.selected {
-  background: linear-gradient(135deg, #22d3ee, #8b5cf6);
+  background: #22d3ee;
   box-shadow: 0 0 14px rgba(139, 92, 246, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.4);
 }
 
@@ -2690,9 +2837,9 @@ input, textarea { caret-color: var(--accent-cyan); }
 }
 
 /* Deadline/task markers: slightly hotter LED glows */
-.due-chip.past, .due-chip.today { box-shadow: 0 0 12px rgba(244, 63, 94, 0.35); }
-.due-chip.soon { box-shadow: 0 0 10px rgba(251, 146, 60, 0.3); }
-.due-chip.done { box-shadow: 0 0 12px rgba(52, 211, 153, 0.4); }
+.due-chip.past, .due-chip.today { box-shadow: 0 0 16px rgba(244, 63, 94, 0.5); }
+.due-chip.soon { box-shadow: 0 0 14px rgba(251, 146, 60, 0.45); }
+.due-chip.done { box-shadow: 0 0 16px rgba(52, 211, 153, 0.5); }
 
 .day-divider { color: rgba(157, 171, 207, 0.95); }
 
@@ -2713,9 +2860,7 @@ input, textarea { caret-color: var(--accent-cyan); }
   align-items: center;
   justify-content: center;
   clip-path: polygon(50% 0%, 93% 25%, 93% 75%, 50% 100%, 7% 75%, 7% 25%);
-  background:
-    linear-gradient(160deg, rgba(255, 255, 255, 0.32), rgba(255, 255, 255, 0.05) 34%, rgba(139, 92, 246, 0.4) 55%, rgba(34, 211, 238, 0.35) 78%, rgba(9, 14, 27, 0.5)),
-    rgba(13, 19, 34, 0.85);
+  background: rgba(13, 19, 34, 0.88);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
   filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.45)) drop-shadow(0 0 12px rgba(139, 92, 246, 0.5));
   transition: transform 0.2s cubic-bezier(0.22, 0.61, 0.36, 1), filter 0.2s ease;
@@ -2733,8 +2878,7 @@ body.sleeping-all .tasks-panel-glass,
 body.sleeping-all .popup-glass,
 body.sleeping-all .panel-glass,
 body.sleeping-all .cat-sidebar,
-body.sleeping-all .task-modal-glass,
-body.sleeping-all #theme-palette {
+body.sleeping-all .task-modal-glass {
   opacity: 0.04 !important;
   transform: scale(0.985);
   pointer-events: none !important;
@@ -2744,57 +2888,16 @@ body.alt-dim .tasks-panel-glass,
 body.alt-dim .popup-glass,
 body.alt-dim .panel-glass,
 body.alt-dim .cat-sidebar,
-body.alt-dim .task-modal-glass,
-body.alt-dim #theme-palette {
+body.alt-dim .task-modal-glass {
   opacity: 0.08 !important;
   pointer-events: none !important;
 }
 
-/* === Theme system ===
-   body[data-theme=…] is set by the renderer (persisted in 'wolf-theme').
-   Light-surface themes (white, light-blue, pink, purple) use dark text and
-   dark-tinted rows; dark themes use white text and white-tinted rows. The
-   browser-preview page background follows the theme too (Electron stays
-   transparent via body.electron-mode). */
-body:not(.electron-mode)[data-theme="black"] { background: radial-gradient(120% 120% at 20% 10%, #1c1c1c 0%, #0c0c0c 45%, #000 100%); }
-body:not(.electron-mode)[data-theme="white"] { background: radial-gradient(120% 120% at 20% 10%, #ffffff 0%, #eef2f7 55%, #d9e2ef 100%); }
-body:not(.electron-mode)[data-theme="light-blue"] { background: radial-gradient(120% 120% at 20% 10%, #e8f6ff 0%, #cfe9fb 55%, #9fd4f7 100%); }
-body:not(.electron-mode)[data-theme="dark-blue"] { background: radial-gradient(120% 120% at 20% 10%, #1e3a8a 0%, #172554 55%, #0b1a3f 100%); }
-body:not(.electron-mode)[data-theme="green"] { background: radial-gradient(120% 120% at 20% 10%, #065f46 0%, #064e3b 55%, #042f22 100%); }
-body:not(.electron-mode)[data-theme="pink"] { background: radial-gradient(120% 120% at 20% 10%, #fdf2f8 0%, #fce7f3 55%, #fbcfe8 100%); }
-body:not(.electron-mode)[data-theme="purple"] { background: radial-gradient(120% 120% at 20% 10%, #f5f3ff 0%, #ede9fe 55%, #ddd6fe 100%); }
-body:not(.electron-mode)[data-theme="red"] { background: radial-gradient(120% 120% at 20% 10%, #7f1d1d 0%, #641717 55%, #450a0a 100%); }
-
-/* Light-surface family: dark text + dark-tinted rows */
-body[data-theme="white"],
-body[data-theme="light-blue"],
-body[data-theme="pink"],
-body[data-theme="purple"] {
-  --surface-row: rgba(15, 23, 42, 0.06);
-  --surface-row-strong: rgba(15, 23, 42, 0.11);
-  --surface-panel: rgba(15, 23, 42, 0.05);
-  --surface-chip: rgba(15, 23, 42, 0.09);
-  --surface-btn: rgba(15, 23, 42, 0.06);
-  --surface-btn-hover: rgba(15, 23, 42, 0.16);
-  --surface-input: rgba(255, 255, 255, 0.6);
-  --hairline: rgba(15, 23, 42, 0.10);
-  --hairline-strong: rgba(15, 23, 42, 0.22);
-  --check-ring: rgba(15, 23, 42, 0.30);
-  --scroll-thumb: rgba(15, 23, 42, 0.25);
-  --divider-text: rgba(71, 85, 105, 0.8);
-  --divider-line: rgba(15, 23, 42, 0.18);
-  --placeholder: rgba(51, 65, 85, 0.55);
-  --shadow-pop:
-    0 14px 48px rgba(15, 23, 42, 0.25),
-    0 0 0 1px rgba(255, 255, 255, 0.5),
-    inset 0 1px 0 rgba(255, 255, 255, 0.85);
-}
-
-/* Dark-surface family: white text + white-tinted rows */
-body[data-theme="black"],
-body[data-theme="dark-blue"],
-body[data-theme="green"],
-body[data-theme="red"] {
+/* === Black theme (the app's single signature look) ===
+   The renderer forces body[data-theme="black"] on every window; these
+   tokens keep the glass deep-black with near-white text. All other theme
+   rules were removed — the app ships with black only. */
+body[data-theme="black"] {
   --surface-row: rgba(255, 255, 255, 0.16);
   --surface-row-strong: rgba(255, 255, 255, 0.26);
   --surface-panel: rgba(255, 255, 255, 0.12);
@@ -2802,246 +2905,56 @@ body[data-theme="red"] {
   --surface-btn: rgba(255, 255, 255, 0.14);
   --surface-btn-hover: rgba(255, 255, 255, 0.30);
   --surface-input: rgba(255, 255, 255, 0.16);
-  --hairline: rgba(255, 255, 255, 0.14);
-  --hairline-strong: rgba(255, 255, 255, 0.26);
-  --check-ring: rgba(255, 255, 255, 0.42);
+  /* INNER separators (between sections, panels and rows) — the vibrant
+     violet hairlines that carry the neon pop. */
+  --hairline: rgba(148, 163, 255, 0.55);
+  --hairline-strong: rgba(167, 139, 250, 0.95);
+  --check-ring: rgba(255, 255, 255, 0.55);
   --scroll-thumb: rgba(255, 255, 255, 0.32);
   --divider-text: rgba(226, 232, 240, 0.8);
-  --divider-line: rgba(255, 255, 255, 0.28);
+  --divider-line: rgba(167, 139, 250, 0.75);
   --placeholder: rgba(226, 232, 240, 0.6);
-}
-
-/* Black — solid black glass */
-body[data-theme="black"] {
   --bg-0: #000000; --bg-1: #0a0a0a; --bg-2: #141414;
   --text-main: #f5f5f5; --text-dim: #9ca3af;
   --glass-bg: rgba(0, 0, 0, 0.82); --glass-bg-deep: rgba(0, 0, 0, 0.92);
-  --glass-border: rgba(255, 255, 255, 0.14); --glass-border-bright: rgba(255, 255, 255, 0.28);
+  /* OUTER frames stay calm — a soft violet-tinted white edge, no neon.
+     The vibrance is reserved for the inner hairlines above. */
+  --glass-border: rgba(167, 139, 250, 0.35); --glass-border-bright: rgba(224, 226, 255, 0.5);
+  --glass-border-top: 2px solid rgba(255, 255, 255, 0.55);
   --glass-sheen: rgba(255, 255, 255, 0.09); --glass-sheen-2: rgba(255, 255, 255, 0.02); --glass-sheen-3: rgba(255, 255, 255, 0.05);
+  --glass-grad: #18181b;
 }
+/* Browser-preview page background (Electron windows stay transparent). */
+body:not(.electron-mode)[data-theme="black"] { background: #27272a; }
 
-/* White — bright porcelain glass */
-body[data-theme="white"] {
-  --bg-0: #ffffff; --bg-1: #eef2f7; --bg-2: #d9e2ef;
-  --text-main: #0f172a; --text-dim: #475569;
-  --glass-bg: rgba(255, 255, 255, 0.82); --glass-bg-deep: rgba(255, 255, 255, 0.94);
-  --glass-border: rgba(15, 23, 42, 0.14); --glass-border-bright: rgba(255, 255, 255, 0.95);
-  --glass-sheen: rgba(255, 255, 255, 0.98); --glass-sheen-2: rgba(255, 255, 255, 0.85); --glass-sheen-3: rgba(226, 232, 240, 0.9);
-}
-
-/* Light blue */
-body[data-theme="light-blue"] {
-  --bg-0: #e8f6ff; --bg-1: #cfe9fb; --bg-2: #a8d8f6;
-  --text-main: #083344; --text-dim: #3b6f8f;
-  --glass-bg: rgba(191, 227, 254, 0.82); --glass-bg-deep: rgba(147, 197, 253, 0.88);
-  --glass-border: rgba(12, 74, 110, 0.18); --glass-border-bright: rgba(255, 255, 255, 0.9);
-  --glass-sheen: rgba(219, 234, 254, 0.95); --glass-sheen-2: rgba(147, 197, 253, 0.6); --glass-sheen-3: rgba(14, 116, 221, 0.4);
-}
-
-/* Dark blue */
-body[data-theme="dark-blue"] {
-  --bg-0: #1e3a8a; --bg-1: #172554; --bg-2: #0f1d44;
-  --text-main: #eef2ff; --text-dim: #a5b4fc;
-  --glass-bg: rgba(30, 58, 138, 0.82); --glass-bg-deep: rgba(23, 37, 84, 0.9);
-  --glass-border: rgba(199, 210, 254, 0.2); --glass-border-bright: rgba(219, 234, 254, 0.35);
-  --glass-sheen: rgba(96, 165, 250, 0.4); --glass-sheen-2: rgba(59, 130, 246, 0.22); --glass-sheen-3: rgba(15, 23, 42, 0.6);
-}
-
-/* Green */
-body[data-theme="green"] {
-  --bg-0: #065f46; --bg-1: #064e3b; --bg-2: #053b2c;
-  --text-main: #ecfdf5; --text-dim: #a7f3d0;
-  --glass-bg: rgba(16, 185, 129, 0.8); --glass-bg-deep: rgba(6, 95, 70, 0.9);
-  --glass-border: rgba(167, 243, 208, 0.22); --glass-border-bright: rgba(209, 250, 229, 0.36);
-  --glass-sheen: rgba(52, 211, 153, 0.38); --glass-sheen-2: rgba(16, 185, 129, 0.2); --glass-sheen-3: rgba(4, 60, 44, 0.6);
-}
-
-/* Pink */
-body[data-theme="pink"] {
-  --bg-0: #fdf2f8; --bg-1: #fce7f3; --bg-2: #fbcfe8;
-  --text-main: #500724; --text-dim: #7c2d51;
-  --glass-bg: rgba(251, 207, 232, 0.85); --glass-bg-deep: rgba(244, 114, 182, 0.88);
-  --glass-border: rgba(190, 24, 93, 0.18); --glass-border-bright: rgba(255, 255, 255, 0.9);
-  --glass-sheen: rgba(254, 205, 211, 0.95); --glass-sheen-2: rgba(251, 207, 232, 0.6); --glass-sheen-3: rgba(190, 24, 93, 0.45);
-}
-
-/* Purple */
-body[data-theme="purple"] {
-  --bg-0: #f5f3ff; --bg-1: #ede9fe; --bg-2: #ddd6fe;
-  --text-main: #2e1065; --text-dim: #5b4b8a;
-  --glass-bg: rgba(221, 214, 254, 0.85); --glass-bg-deep: rgba(167, 139, 250, 0.88);
-  --glass-border: rgba(76, 29, 149, 0.18); --glass-border-bright: rgba(255, 255, 255, 0.9);
-  --glass-sheen: rgba(237, 233, 254, 0.95); --glass-sheen-2: rgba(196, 181, 253, 0.6); --glass-sheen-3: rgba(76, 29, 149, 0.45);
-}
-
-/* Red */
-body[data-theme="red"] {
-  --bg-0: #7f1d1d; --bg-1: #641717; --bg-2: #4a0e0e;
-  --text-main: #fef2f2; --text-dim: #fecaca;
-  --glass-bg: rgba(185, 28, 28, 0.84); --glass-bg-deep: rgba(153, 27, 27, 0.9);
-  --glass-border: rgba(254, 202, 202, 0.2); --glass-border-bright: rgba(254, 226, 226, 0.36);
-  --glass-sheen: rgba(248, 113, 113, 0.38); --glass-sheen-2: rgba(239, 68, 68, 0.2); --glass-sheen-3: rgba(69, 10, 10, 0.6);
-}
-
-/* Section titles: the pale pink/green tints are unreadable on light glass —
-   switch the light family to deeper shades. */
-body[data-theme="white"] .deadlines-half .section-title,
-body[data-theme="light-blue"] .deadlines-half .section-title,
-body[data-theme="pink"] .deadlines-half .section-title,
-body[data-theme="purple"] .deadlines-half .section-title { color: #be185d; }
-body[data-theme="white"] .daily-half .section-title,
-body[data-theme="light-blue"] .daily-half .section-title,
-body[data-theme="pink"] .daily-half .section-title,
-body[data-theme="purple"] .daily-half .section-title { color: #047857; }
-
-/* Streak chip: the amber-on-dark styling needs a dark-text variant on light
-   glass, and the due-chips' pale text needs deepening too. */
-body[data-theme="white"] .streak-chip,
-body[data-theme="light-blue"] .streak-chip,
-body[data-theme="pink"] .streak-chip,
-body[data-theme="purple"] .streak-chip {
-  color: #78350f;
-  background: linear-gradient(135deg, rgba(251, 191, 36, 0.5), rgba(244, 63, 94, 0.3));
-  border-color: rgba(180, 83, 9, 0.45);
-  text-shadow: none;
-}
-body[data-theme="white"] .due-chip,
-body[data-theme="light-blue"] .due-chip,
-body[data-theme="pink"] .due-chip,
-body[data-theme="purple"] .due-chip { color: #475569; }
-body[data-theme="white"] .due-chip.past,
-body[data-theme="light-blue"] .due-chip.past,
-body[data-theme="pink"] .due-chip.past,
-body[data-theme="purple"] .due-chip.past { color: #9f1239; }
-body[data-theme="white"] .due-chip.today,
-body[data-theme="light-blue"] .due-chip.today,
-body[data-theme="pink"] .due-chip.today,
-body[data-theme="purple"] .due-chip.today { color: #be123c; }
-body[data-theme="white"] .due-chip.close,
-body[data-theme="light-blue"] .due-chip.close,
-body[data-theme="pink"] .due-chip.close,
-body[data-theme="purple"] .due-chip.close { color: #92400e; }
-body[data-theme="white"] .due-chip.soon,
-body[data-theme="light-blue"] .due-chip.soon,
-body[data-theme="pink"] .due-chip.soon,
-body[data-theme="purple"] .due-chip.soon { color: #c2410c; }
-body[data-theme="white"] .due-chip.done,
-body[data-theme="light-blue"] .due-chip.done,
-body[data-theme="pink"] .due-chip.done,
-body[data-theme="purple"] .due-chip.done { color: #047857; }
-
-/* === Theme palette (pops up at the bottom-left of the planner) === */
-#theme-palette {
-  position: absolute;
-  left: 12px;
-  bottom: 12px;
-  z-index: 230;
-  pointer-events: none;
-  transition: opacity 0.25s ease, transform 0.3s cubic-bezier(0.22, 0.61, 0.36, 1);
-  transform-origin: bottom left;
-}
-#theme-palette.palette-hidden {
-  opacity: 0;
-  transform: translateY(10px) scale(0.9);
-  pointer-events: none;
-}
-#theme-palette:not(.palette-hidden) { pointer-events: auto; }
-.palette-glass {
-  width: 212px;
-  background:
-    linear-gradient(165deg, var(--glass-sheen), var(--glass-sheen-2) 36%, var(--glass-sheen-3) 100%),
-    var(--glass-bg-deep);
-  backdrop-filter: blur(18px) saturate(1.4) brightness(1.06);
-  -webkit-backdrop-filter: blur(18px) saturate(1.4) brightness(1.06);
-  border: 1px solid var(--glass-border);
-  border-top: 1px solid var(--glass-border-bright);
-  border-radius: 16px;
-  padding: 12px;
-  box-shadow: var(--shadow-pop), 0 0 34px rgba(139, 92, 246, 0.25);
-}
-.palette-title {
-  font-size: 10.5px;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--text-main);
-  margin-bottom: 10px;
-}
-.palette-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
-}
-.swatch {
-  position: relative;
-  aspect-ratio: 1;
-  border: none;
-  border-radius: 11px;
-  cursor: pointer;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 2px 8px rgba(0, 0, 0, 0.28);
-  transition: transform 0.16s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.16s ease, outline-color 0.16s ease;
-}
-.swatch:hover {
-  transform: scale(1.14) rotate(-3deg);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 6px 18px rgba(0, 0, 0, 0.35);
-}
-.swatch:active { transform: scale(0.95); }
-.swatch.active {
-  outline: 2px solid var(--text-main);
-  outline-offset: 2px;
-  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.55), 0 0 18px rgba(139, 92, 246, 0.6);
-}
-.swatch.active::after {
-  content: '✓';
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 16px;
-  font-weight: 900;
-  color: #fff;
-  text-shadow: 0 1px 5px rgba(0, 0, 0, 0.85);
-}
-
-/* === Browser-preview launcher hover-arm (mirrors the Electron launcher's
-   ~2.5s hold-to-open progress arc) === */
-.browser-arm-ring {
+/* === Custom tooltips (replaces the native title bubble — the OS bubble
+   can't be styled or use the app font) === */
+.app-tooltip {
   position: fixed;
-  left: 96px;
-  top: 16px;
-  z-index: 299;
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  background: conic-gradient(from -90deg, #22d3ee calc(var(--p, 0) * 1%), rgba(255, 255, 255, 0.12) 0);
-  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 3px));
-  mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 3px));
-  opacity: 0;
+  z-index: 500;
+  max-width: 240px;
+  padding: 7px 11px;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.96);
+  border: 1.5px solid rgba(255, 255, 255, 0.28);
+  border-top: 1px solid rgba(255, 255, 255, 0.45);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  color: #e8edff;
+  font-family: 'Comfortaa', 'Segoe UI', system-ui, sans-serif;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: 0.01em;
+  text-align: center;
   pointer-events: none;
-  transition: opacity 0.2s ease;
-}
-body.arming .browser-arm-ring { opacity: 1; }
-.browser-arm-timer {
-  position: fixed;
-  left: 96px;
-  top: 68px;
-  z-index: 299;
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  color: #dbeafe;
-  background: rgba(9, 14, 27, 0.75);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 999px;
-  padding: 2px 8px;
   opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.2s ease;
+  transform: translateY(4px);
+  transition: opacity 0.18s ease, transform 0.18s ease;
 }
-body.arming .browser-arm-timer { opacity: 1; }
-body.electron-mode .browser-arm-ring,
-body.electron-mode .browser-arm-timer { display: none !important; }
+.app-tooltip.visible { opacity: 1; transform: translateY(0); }
+/* Never show a tooltip over a sleeping or peeked app. */
+body.sleeping-all .app-tooltip,
+body.alt-dim .app-tooltip { opacity: 0 !important; transform: translateY(4px); }
 
 /* === View mode bar (Tasks / Calendar / Week — one at a time) === */
 .view-switch {
@@ -3049,16 +2962,18 @@ body.electron-mode .browser-arm-timer { display: none !important; }
   gap: 5px;
   padding: 8px 10px 7px;
   border-bottom: 1px solid var(--hairline);
-  background: linear-gradient(180deg, var(--surface-btn), transparent);
+  background: transparent;
   flex-shrink: 0;
 }
 .vs-btn {
   flex: 1;
   height: 30px;
-  border: 1px solid var(--hairline);
+  border: 1.5px solid var(--hairline);
   border-radius: 9px;
   background: var(--surface-btn);
-  color: var(--text-dim);
+  /* All three view buttons share the SAME strong text color — the active
+     one is told apart by its gradient pill, never by dimmer text. */
+  color: var(--text-main);
   font-family: inherit;
   font-size: 12px;
   font-weight: 700;
@@ -3076,10 +2991,10 @@ body.electron-mode .browser-arm-timer { display: none !important; }
   transform: translateY(-1px);
 }
 .vs-btn.active {
-  background: linear-gradient(135deg, rgba(34, 211, 238, 0.55), rgba(139, 92, 246, 0.65));
+  background: rgba(139, 92, 246, 0.8);
   border-color: transparent;
   color: #fff;
-  box-shadow: 0 2px 10px rgba(139, 92, 246, 0.4);
+  box-shadow: 0 2px 12px rgba(139, 92, 246, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.3);
 }
 
 /* === Calendar view (month grid on top, selected day's items below) ===
@@ -3113,7 +3028,7 @@ body.view-calendar #calendar-view { display: flex; }
   width: 26px;
   height: 26px;
   border-radius: 8px;
-  border: 1px solid var(--hairline-strong);
+  border: 1.5px solid var(--hairline-strong);
   background: var(--surface-btn);
   color: var(--text-main);
   font-size: 13px;
@@ -3135,7 +3050,7 @@ body.view-calendar #calendar-view { display: flex; }
      third of the screen's height so the days don't feel cramped. */
   height: clamp(260px, 35vh, 420px);
   background: var(--surface-panel);
-  border: 1px solid var(--hairline);
+  border: 1.5px solid var(--hairline);
   border-radius: 14px;
   padding: 10px;
 }
@@ -3169,10 +3084,10 @@ body.view-calendar #calendar-view { display: flex; }
   background: var(--surface-btn-hover);
   transform: scale(1.07);
 }
-.cal-day.other { color: var(--text-dim); opacity: 0.45; }
-.cal-day.today { box-shadow: inset 0 0 0 1.5px var(--accent-cyan); }
+.cal-day.other { color: var(--text-dim); opacity: 0.6; }
+.cal-day.today {  box-shadow: inset 0 0 0 2px var(--accent-cyan), inset 0 0 0 3px rgba(34, 211, 238, 0.25); }
 .cal-day.sel {
-  background: linear-gradient(135deg, rgba(34, 211, 238, 0.8), rgba(139, 92, 246, 0.9));
+  background: rgba(139, 92, 246, 0.9);
   color: #fff;
   box-shadow: 0 0 12px rgba(139, 92, 246, 0.5);
 }
@@ -3203,7 +3118,7 @@ body.view-calendar #calendar-view { display: flex; }
   flex-direction: column;
   gap: 6px;
   background: var(--surface-panel);
-  border: 1px solid var(--hairline);
+  border: 1.5px solid var(--hairline);
   border-radius: 14px;
   padding: 8px;
   overflow: hidden;

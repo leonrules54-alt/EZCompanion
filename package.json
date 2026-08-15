@@ -12,7 +12,8 @@
     "package": "electron-forge package",
     "make": "electron-forge make",
     "make:installer": "node scripts/make-installer.js",
-    "icon": "electron scripts/generate-icon.js"
+    "icon": "electron scripts/generate-icon.js",
+    "test": "node --test test/assistant-parser.test.js"
   },
   "devDependencies": {
     "@electron-forge/cli": "^7.11.2",

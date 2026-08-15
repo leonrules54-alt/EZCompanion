@@ -20,75 +20,28 @@
 
   /* === Unique launcher button: a hexagonal glass gem with a spinning neon
      halo. Sits dead-centre of this tiny window (the window is sized to fit
-     the open ring menu around it). === */
+     the open ring menu around it). Clicking it opens the feature ring. === */
   #launcher-wrap {
     position: absolute;
     left: 50%;
     top: 50%;
     transform: translate(-50%, -50%);
-    width: 72px;
-    height: 72px;
+    width: 116px;
+    height: 116px;
     z-index: 5;
     cursor: pointer;
   }
-
-  /* Hover-arm progress arc: a conic ring around the gem that fills as the
-     cursor rests on the button (~2.5s to open the menu). Turns into a
-     spinning rainbow once armed. */
-  #arm-ring {
-    position: absolute;
-    inset: -14px;
-    border-radius: 50%;
-    background: conic-gradient(from -90deg, #22d3ee calc(var(--p, 0) * 1%), rgba(255, 255, 255, 0.10) 0);
-    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 4px));
-    mask: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 4px));
-    opacity: 0;
-    pointer-events: none;
-    z-index: 6;
-    transition: opacity 0.25s ease;
-  }
-  body.arming #arm-ring {
-    opacity: 1;
-    filter: drop-shadow(0 0 6px rgba(34, 211, 238, 0.8));
-  }
-  body.armed #arm-ring {
-    opacity: 1;
-    background: conic-gradient(from -90deg, #34d399, #22d3ee, #8b5cf6, #f472b6, #34d399);
-    animation: haloSpin 2s linear infinite;
-    filter: drop-shadow(0 0 10px rgba(52, 211, 153, 0.9));
-  }
-  /* Countdown label under the gem while arming */
-  #arm-timer {
-    position: absolute;
-    left: 50%;
-    bottom: -30px;
-    transform: translateX(-50%);
-    font-size: 11px;
-    font-weight: 800;
-    letter-spacing: 0.06em;
-    color: #dbeafe;
-    background: rgba(9, 14, 27, 0.72);
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    border-radius: 999px;
-    padding: 3px 10px;
-    white-space: nowrap;
-    opacity: 0;
-    pointer-events: none;
-    z-index: 7;
-    transition: opacity 0.2s ease;
-  }
-  body.arming #arm-timer { opacity: 1; }
 
   /* Conic rainbow halo that slowly spins behind the hexagon */
   #launcher-wrap::before {
     content: '';
     position: absolute;
-    inset: -9px;
+    inset: -13px;
     border-radius: 50%;
     background: conic-gradient(
       from 0deg, #6366f1, #38bdf8, #22d3ee, #34d399, #fbbf24, #f472b6, #ec4899, #a78bfa, #6366f1);
-    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
-    mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 3px));
+    mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 3px));
     filter: drop-shadow(0 0 6px rgba(139, 92, 246, 0.8));
     animation: haloSpin 7s linear infinite;
     opacity: 0.9;
@@ -97,7 +50,7 @@
   #launcher-wrap::after {
     content: '';
     position: absolute;
-    inset: -22px;
+    inset: -30px;
     border-radius: 50%;
     background: radial-gradient(circle, rgba(139, 92, 246, 0.35), rgba(34, 211, 238, 0.12) 45%, transparent 70%);
     animation: bloomPulse 2.6s ease-in-out infinite;
@@ -111,9 +64,7 @@
     align-items: center;
     justify-content: center;
     clip-path: polygon(50% 0%, 93% 25%, 93% 75%, 50% 100%, 7% 75%, 7% 25%);
-    background:
-      linear-gradient(160deg, rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0.06) 34%, rgba(139, 92, 246, 0.34) 55%, rgba(34, 211, 238, 0.3) 78%, rgba(9, 14, 27, 0.5)),
-      rgba(13, 19, 34, 0.85);
+    background: rgba(13, 19, 34, 0.88);
     backdrop-filter: blur(10px) saturate(1.4) brightness(1.1);
     -webkit-backdrop-filter: blur(10px) saturate(1.4) brightness(1.1);
     box-shadow:
@@ -123,13 +74,13 @@
     transition: filter 0.25s ease, transform 0.25s cubic-bezier(0.22, 0.61, 0.36, 1);
   }
   #launcher .glyph {
-    font-size: 26px;
+    font-size: 40px;
     line-height: 1;
     filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.8));
     transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
   }
   /* Hovered (cursor resting on the button): the gem swells, the halo spins
-     faster and the glyph pops — inviting the ring to open. */
+     faster and the glyph pops — inviting a click. */
   body.hover #launcher {
     filter: drop-shadow(0 6px 18px rgba(0, 0, 0, 0.55)) drop-shadow(0 0 22px rgba(167, 139, 250, 0.85));
     transform: scale(1.1);
@@ -139,8 +90,9 @@
     opacity: 1;
   }
   body.hover #launcher .glyph { transform: scale(1.18) rotate(18deg); }
+  #launcher:active { transform: scale(0.94); }
 
-  /* === Radial ring menu (opens around the launcher on hover) === */
+  /* === Radial ring menu (opens around the launcher on click) === */
   #ring {
     position: absolute;
     left: 50%;
@@ -155,7 +107,7 @@
   }
   #ring.open {
     opacity: 1;
-    transform: translate(-50%, -50%) scale(0.72); /* ~202px — fits the bigger window */
+    transform: translate(-50%, -50%) scale(0.92); /* ~258px — fits the bigger window */
   }
   #ring.open .ring-seg { pointer-events: all; }
 
@@ -164,36 +116,32 @@
     position: absolute;
     inset: 3px;
     border-radius: 50%;
-    background:
-      linear-gradient(165deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0.05) 38%, rgba(99, 102, 241, 0.10) 80%),
-      linear-gradient(135deg, rgba(139, 92, 246, 0.32), rgba(56, 189, 248, 0.16) 34%, rgba(236, 72, 153, 0.20) 68%, rgba(52, 211, 153, 0.14)),
-      radial-gradient(circle at 32% 26%, rgba(167, 139, 250, 0.5), rgba(20, 28, 54, 0.55) 62%),
-      rgba(9, 14, 27, 0.5);
+    background: rgba(9, 14, 27, 0.6);
     backdrop-filter: blur(16px) saturate(1.5) brightness(1.08);
     -webkit-backdrop-filter: blur(16px) saturate(1.5) brightness(1.08);
-    border: 1px solid rgba(255, 255, 255, 0.3);
     box-shadow:
       0 14px 52px rgba(0, 0, 0, 0.55),
-      0 0 140px rgba(139, 92, 246, 0.4),
+      0 0 140px rgba(139, 92, 246, 0.5),
+      0 0 0 2px rgba(167, 139, 250, 0.6),
       inset 0 1px 0 rgba(255, 255, 255, 0.38),
       inset 0 -1px 0 rgba(0, 0, 0, 0.3);
     -webkit-mask: radial-gradient(circle, transparent 0 88px, #000 90px 100%);
     mask: radial-gradient(circle, transparent 0 88px, #000 90px 100%);
     pointer-events: none;
   }
-  /* Conic neon border */
+  /* Conic neon border — the ring's single border, sitting ON the glass edge */
   .ring-glass::before {
     content: '';
     position: absolute;
-    inset: -4px;
+    inset: 0;
     border-radius: 50%;
     background: conic-gradient(
       from 0deg,
       rgba(99, 102, 241, 1) 0%, rgba(56, 189, 248, 1) 12.5%, rgba(34, 211, 238, 1) 25%,
       rgba(52, 211, 153, 1) 37.5%, rgba(250, 204, 21, 1) 50%, rgba(244, 114, 182, 1) 62.5%,
       rgba(236, 72, 153, 1) 75%, rgba(167, 139, 250, 1) 87.5%, rgba(99, 102, 241, 1) 100%);
-    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 6px), #000 calc(100% - 4px));
-    mask: radial-gradient(farthest-side, transparent calc(100% - 6px), #000 calc(100% - 4px));
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 10px), #000 calc(100% - 6px));
+    mask: radial-gradient(farthest-side, transparent calc(100% - 10px), #000 calc(100% - 6px));
     animation: ringSpin 12s linear infinite;
     opacity: 0.9;
     pointer-events: none;
@@ -216,14 +164,14 @@
   .ring-seg { cursor: pointer; }
   #ring:not(.open) .ring-seg { pointer-events: none; }
   .ring-seg path {
-    stroke: rgba(255, 255, 255, 0.45);
-    stroke-width: 1.2;
+    stroke: rgba(255, 255, 255, 0.65);
+    stroke-width: 1.6;
     transition: fill 0.2s ease, stroke 0.2s ease, filter 0.2s ease;
     filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.25));
   }
   .ring-seg .seg-icon {
     fill: #ffffff;
-    font-size: 24px;
+    font-size: 30px;
     text-anchor: middle;
     dominant-baseline: central;
     pointer-events: none;
@@ -231,8 +179,8 @@
     transition: filter 0.2s ease;
   }
   .ring-seg .seg-btn {
-    stroke: rgba(255, 255, 255, 0.6);
-    stroke-width: 1.3;
+    stroke: rgba(255, 255, 255, 0.75);
+    stroke-width: 1.6;
     transform-box: fill-box;
     transform-origin: center;
     filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.42)) drop-shadow(0 0 10px var(--glow));
@@ -241,11 +189,9 @@
   /* Per-action accent glow */
   .ring-seg[data-action="info"]       { --glow: #38bdf8; --glow-fill: rgba(56, 189, 248, 0.4); }
   .ring-seg[data-action="clipboard"]  { --glow: #2dd4bf; --glow-fill: rgba(45, 212, 191, 0.38); }
+  .ring-seg[data-action="assistant"]  { --glow: #e879f9; --glow-fill: rgba(232, 121, 249, 0.4); }
   .ring-seg[data-action="notes"]      { --glow: #fbbf24; --glow-fill: rgba(251, 191, 36, 0.38); }
-  .ring-seg[data-action="tasks"]      { --glow: #34d399; --glow-fill: rgba(52, 211, 153, 0.38); }
   .ring-seg[data-action="focus"]      { --glow: #a3e635; --glow-fill: rgba(163, 230, 53, 0.38); }
-  .ring-seg[data-action="calendar"]   { --glow: #f97316; --glow-fill: rgba(249, 115, 22, 0.4); }
-  .ring-seg[data-action="week"]       { --glow: #818cf8; --glow-fill: rgba(129, 140, 248, 0.4); }
   .ring-seg[data-action="screenshot"] { --glow: #f472b6; --glow-fill: rgba(244, 114, 182, 0.42); }
   .ring-seg[data-action="settings"]   { --glow: #94a3b8; --glow-fill: rgba(148, 163, 184, 0.38); }
 
@@ -264,14 +210,69 @@
     filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.42)) drop-shadow(0 0 20px var(--glow)) brightness(1.15);
   }
   .ring-seg:active path { filter: brightness(0.9); }
+
+  /* Clean glass tooltip (replaces the native title bubble) */
+  .mini-tip {
+    position: fixed;
+    z-index: 20;
+    max-width: 200px;
+    padding: 6px 10px;
+    border-radius: 9px;
+    background: rgba(15, 23, 42, 0.96);
+    border: 1.5px solid rgba(255, 255, 255, 0.28);
+    border-top: 1px solid rgba(255, 255, 255, 0.45);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    color: #e8edff;
+    font-family: 'Comfortaa', 'Segoe UI', system-ui, sans-serif;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.35;
+    letter-spacing: 0.01em;
+    text-align: center;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(4px);
+    transition: opacity 0.16s ease, transform 0.16s ease;
+  }
+  .mini-tip.visible { opacity: 1; transform: translateY(0); }
+
+  /* === Assistant bubble: a small 💬 chip at the window's top-left corner
+     ("top middle-left" of the launcher). Clicking it opens the assistant
+     chat window that fills the left side of the screen. === */
+  #assist-trigger {
+    position: absolute;
+    left: 12px;
+    top: 12px;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    background: rgba(13, 19, 34, 0.88);
+    border: 2px solid rgba(167, 139, 250, 0.45);
+    border-top: 1.5px solid rgba(255, 255, 255, 0.5);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+    cursor: pointer;
+    z-index: 6;
+    transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), border-color 0.2s, box-shadow 0.2s;
+  }
+  body.assist-hover #assist-trigger {
+    transform: scale(1.14);
+    border-color: rgba(167, 139, 250, 0.95);
+    box-shadow: 0 0 18px rgba(139, 92, 246, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  }
+  #assist-trigger:active { transform: scale(0.93); }
 </style>
 </head>
 <body>
   <div id="launcher-wrap">
-    <div id="arm-ring"></div>
-    <div id="arm-timer"></div>
     <div id="launcher"><span class="glyph">✦</span></div>
   </div>
+
+  <!-- Assistant trigger: opens the left-side chat window -->
+  <div id="assist-trigger" title="Assistant">💬</div>
 
   <!-- Radial ring menu -->
   <div id="ring">
@@ -283,26 +284,24 @@
     // Defensive shim: everything needs the preload bridge; without it the
     // launcher stays inert (it only runs inside Electron anyway).
     const api = window.electronAPI || {
-      openPanel() {}, openNotesPanel() {}, openScreenshotOverlay() {},
+      openPanel() {}, openNotesPanel() {}, openScreenshotOverlay() {}, openAssistant() {},
       onButtonHover() {}, setRingOpen() {},
     };
 
-    // === Ring menu actions — the app's feature menu ===
+    // === Ring menu actions — the app's feature menu (view switching lives
+    // in the planner's own Tasks/Calendar/Week bar, so it's not here). ===
     const RING_ACTIONS = [
-      { action: 'info', icon: 'ℹ️' },
-      { action: 'clipboard', icon: '📋' },
-      { action: 'notes', icon: '📝' },
-      { action: 'tasks', icon: '🎯' },
-      { action: 'focus', icon: '⏱️' },
-      { action: 'calendar', icon: '📅' },
-      { action: 'week', icon: '📆' },
-      { action: 'screenshot', icon: '📷' },
-      { action: 'settings', icon: '⚙️' },
+      { action: 'info',       icon: 'ℹ️',  label: 'Info & Weather' },
+      { action: 'clipboard',  icon: '📋',  label: 'Clipboard History' },
+      { action: 'assistant',  icon: '🗨️',  label: 'Assistant' },
+      { action: 'notes',      icon: '📝',  label: 'Quick Notes' },
+      { action: 'focus',      icon: '⏱️',  label: 'Focus Timer' },
+      { action: 'screenshot', icon: '📷',  label: 'Screenshot' },
+      { action: 'settings',   icon: '⚙️',  label: 'Settings' },
     ];
     const ACTION_COLORS = {
-      info: '#38bdf8', clipboard: '#2dd4bf', notes: '#fbbf24',
-      tasks: '#34d399', focus: '#a3e635', calendar: '#f97316', week: '#818cf8',
-      screenshot: '#f472b6', settings: '#94a3b8',
+      info: '#38bdf8', clipboard: '#2dd4bf', assistant: '#e879f9', notes: '#fbbf24',
+      focus: '#a3e635', screenshot: '#f472b6', settings: '#94a3b8',
     };
 
     function buildRingMenu() {
@@ -312,7 +311,7 @@
       const CX = 140, CY = 140;
       const R_OUT = 124, R_IN = 88;
       const ICON_R = (R_IN + R_OUT) / 2;
-      const BTN_R = 16;
+      const BTN_R = 19;                     // glass button behind each icon (bigger ring → bigger button)
       const N = RING_ACTIONS.length;
       const step = 360 / N;
       const gap = 1.4;
@@ -356,7 +355,7 @@
         g.setAttribute('class', 'ring-seg');
         g.setAttribute('data-action', item.action);
         g.setAttribute('data-icon', item.icon);
-        g.title = item.action;
+        g.setAttribute('data-tip', item.label);
 
         const path = document.createElementNS(NS, 'path');
         path.setAttribute('d', d);
@@ -395,26 +394,26 @@
       api.setRingOpen(false);
     }
 
-    const armRingEl = document.getElementById('arm-ring');
-    const armTimerEl = document.getElementById('arm-timer');
+    // Click the gem to open/close the ring — no hover-hold, no countdown.
+    document.getElementById('launcher-wrap').addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (ring.classList.contains('open')) closeRing();
+      else openRing();
+    });
 
-    // Hover handled by main.js (cursor poll): resting on the button fills
-    // the progress arc over ~2.5s; the ring opens ONLY when armed, and stays
-    // open until the cursor leaves the whole window (so sliding from the
-    // button onto a segment keeps it open).
+    // Hover state comes from main.js's cursor poll; the ring only closes
+    // when the cursor leaves the whole window.
     api.onButtonHover((state) => {
       document.body.classList.toggle('hover', !!(state && state.active));
-      const progress = state && typeof state.progress === 'number' ? state.progress : 0;
-      const armed = !!(state && state.armed);
-      document.body.classList.toggle('arming', progress > 0 && progress < 1 && !armed);
-      document.body.classList.toggle('armed', armed);
-      if (armRingEl) armRingEl.style.setProperty('--p', (progress * 100).toFixed(1));
-      if (armTimerEl) {
-        const remain = Math.ceil((1 - progress) * 2.5); // seconds left (BTN_ARM_MS=2500)
-        armTimerEl.textContent = (progress > 0 && progress < 1 && !armed) ? remain + 's' : '';
-      }
-      if (armed) openRing();
-      else if (state && !state.inWindow) closeRing();
+      document.body.classList.toggle('assist-hover', !!(state && state.assist));
+      if (state && !state.inWindow) closeRing();
+    });
+
+    // The 💬 bubble opens the assistant chat window (left side of screen).
+    document.getElementById('assist-trigger').addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeRing();
+      api.openAssistant();
     });
 
     // Ring segment clicks (delegated — segments are built dynamically).
@@ -435,6 +434,39 @@
           api.openPanel(action);
       }
     });
+
+    // === Clean glass tooltips (Comfortaa) for the ring segments ===
+    const tipEl = document.createElement('div');
+    tipEl.className = 'mini-tip';
+    document.body.appendChild(tipEl);
+    let tipTimer = null;
+    function tipFor(el, text) {
+      if (tipTimer) clearTimeout(tipTimer);
+      tipTimer = setTimeout(() => {
+        tipEl.textContent = text;
+        const r = el.getBoundingClientRect();
+        const w = Math.min(200, tipEl.offsetWidth || 120);
+        const h = tipEl.offsetHeight || 26;
+        const cw = document.documentElement.clientWidth;
+        const ch = document.documentElement.clientHeight;
+        let left = r.left + r.width / 2 - w / 2;
+        left = Math.max(4, Math.min(left, cw - w - 4));
+        const top = r.top > 70 ? r.top - h - 10 : r.bottom + 10;
+        tipEl.style.left = left + 'px';
+        tipEl.style.top = Math.max(4, Math.min(top, ch - h - 4)) + 'px';
+        tipEl.classList.add('visible');
+      }, 160);
+    }
+    function tipHide() {
+      if (tipTimer) { clearTimeout(tipTimer); tipTimer = null; }
+      tipEl.classList.remove('visible');
+    }
+    document.getElementById('ring-segments').addEventListener('mousemove', (e) => {
+      const seg = e.target.closest('.ring-seg');
+      if (seg && seg.dataset.tip) tipFor(seg, seg.dataset.tip);
+      else tipHide();
+    });
+    document.getElementById('ring-segments').addEventListener('mouseleave', tipHide);
 
     buildRingMenu();
   </script>

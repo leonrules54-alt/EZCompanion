@@ -19,8 +19,9 @@
     -webkit-tap-highlight-color: transparent;
     color: #e8edff;
   }
-  /* The notes popup: a glass card floating LEFT of the sidebar, about half
-     its height (the window is sized/positioned in main.js). */
+  /* The notes popup: a glass card floating LEFT of the sidebar, sized in
+     main.js (full sidebar height by default; the user can drag the edges to
+     resize it). */
   #notes-glass {
     position: relative;
     flex: 1;
@@ -28,17 +29,16 @@
     display: flex;
     flex-direction: column;
     border-radius: 18px;
-    background:
-      linear-gradient(165deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.03) 36%, rgba(9, 14, 27, 0.3) 100%),
-      radial-gradient(120% 90% at 85% -10%, rgba(251, 191, 36, 0.10), transparent 55%),
-      rgba(9, 14, 27, 0.82);
+    background: rgba(9, 14, 27, 0.82);
     backdrop-filter: blur(14px) saturate(1.3) brightness(1.04);
     -webkit-backdrop-filter: blur(14px) saturate(1.3) brightness(1.04);
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    border-top: 1px solid rgba(255, 255, 255, 0.26);
+    border: 2px solid rgba(167, 139, 250, 0.45);
+    border-top: 1.5px solid rgba(255, 255, 255, 0.5);
     box-shadow:
       0 14px 44px rgba(0, 0, 0, 0.5),
-      0 0 34px rgba(251, 191, 36, 0.12),
+      0 0 34px rgba(251, 191, 36, 0.22),
+      0 0 0 1.5px rgba(167, 139, 250, 0.28),
+      0 0 22px rgba(139, 92, 246, 0.18),
       inset 0 1px 0 rgba(255, 255, 255, 0.16);
     overflow: hidden;
   }
@@ -60,7 +60,7 @@
     align-items: center;
     gap: 8px;
     padding: 13px 14px 11px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    border-bottom: 1.5px solid rgba(167, 139, 250, 0.6);
     flex-shrink: 0;
   }
   .head .title {
@@ -69,20 +69,16 @@
     font-weight: 800;
     letter-spacing: 0.02em;
   }
-  @supports (-webkit-background-clip: text) or (background-clip: text) {
-    .head .title {
-      background: linear-gradient(90deg, #fef3c7, #fbbf24 55%, #f59e0b);
-      -webkit-background-clip: text;
-      background-clip: text;
-      color: transparent;
-      filter: drop-shadow(0 0 8px rgba(251, 191, 36, 0.45));
-    }
+  /* Solid bright title — no gradient-clip (it faded the tail of the word). */
+  .head .title {
+    color: #fde68a;
+    filter: drop-shadow(0 0 8px rgba(251, 191, 36, 0.45));
   }
   .close {
     width: 24px;
     height: 24px;
     border-radius: 50%;
-    border: 1px solid rgba(255, 255, 255, 0.2);
+    border: 1.5px solid rgba(255, 255, 255, 0.3);
     background: rgba(255, 255, 255, 0.09);
     color: #9dabcf;
     font-size: 11px;
@@ -115,7 +111,7 @@
     resize: none;
     padding: 11px;
     border-radius: 12px;
-    border: 1px solid rgba(255, 255, 255, 0.16);
+    border: 1.5px solid rgba(255, 255, 255, 0.28);
     background: rgba(255, 255, 255, 0.07);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
     color: #e8edff;
@@ -143,7 +139,7 @@
     letter-spacing: 0.03em;
     cursor: pointer;
     color: #0b1020;
-    background: linear-gradient(135deg, rgba(34, 211, 238, 0.92), rgba(139, 92, 246, 0.94));
+    background: #22d3ee;
     box-shadow: 0 3px 14px rgba(99, 102, 241, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.5);
     transition: all 0.15s;
   }
@@ -179,8 +175,9 @@
     align-items: flex-start;
     gap: 8px;
     padding: 9px 10px;
-    background: rgba(255, 255, 255, 0.06);
-    border: 1px solid rgba(255, 255, 255, 0.09);
+    /* Soft diagonal amber → violet → cyan tint so the list isn't flat */
+    background: rgba(255, 255, 255, 0.07);
+    border: 1.5px solid rgba(255, 255, 255, 0.16);
     border-radius: 10px;
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
     cursor: pointer;
@@ -213,7 +210,8 @@
   }
   .note-meta {
     font-size: 10px;
-    color: #9dabcf;
+    font-weight: 700;
+    color: #c7d2fe;
     flex-shrink: 0;
     padding-top: 1px;
   }
@@ -225,7 +223,7 @@
   .note-act {
     width: 20px;
     height: 20px;
-    border: 1px solid rgba(255, 255, 255, 0.12);
+    border: 1.5px solid rgba(255, 255, 255, 0.22);
     border-radius: 6px;
     background: rgba(255, 255, 255, 0.1);
     color: #9dabcf;
@@ -239,75 +237,51 @@
   .note-act:hover { background: rgba(255, 255, 255, 0.28); color: #fff; transform: scale(1.12); border-color: rgba(255, 255, 255, 0.45); }
   .note-act.del:hover { background: rgba(244, 63, 94, 0.35); border-color: rgba(244, 63, 94, 0.6); }
 
-  /* === Follow the app theme palette (body[data-theme] set below) === */
-  /* Light-surface family: bright glass + dark text */
-  body[data-theme="white"] #notes-glass,
-  body[data-theme="light-blue"] #notes-glass,
-  body[data-theme="pink"] #notes-glass,
-  body[data-theme="purple"] #notes-glass {
-    background: linear-gradient(165deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.92) 40%, rgba(226, 232, 240, 0.95) 100%);
-    border-color: rgba(15, 23, 42, 0.16);
-    border-top-color: rgba(255, 255, 255, 0.95);
-    box-shadow: 0 14px 44px rgba(15, 23, 42, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.95);
-    color: #0f172a;
+  /* Resize grip (bottom-right corner) — the window itself is resizable, so
+     this is a visual hint that the card can be stretched. */
+  #notes-glass::after {
+    content: '';
+    position: absolute;
+    right: 9px;
+    bottom: 9px;
+    width: 14px;
+    height: 14px;
+    background:
+      linear-gradient(135deg, transparent 0 46%, rgba(255, 255, 255, 0.5) 46% 54%, transparent 54% 66%, rgba(255, 255, 255, 0.32) 66% 74%, transparent 74%),
+      linear-gradient(45deg, transparent 0 46%, rgba(255, 255, 255, 0.5) 46% 54%, transparent 54% 66%, rgba(255, 255, 255, 0.32) 66% 74%, transparent 74%);
+    pointer-events: none;
+    opacity: 0.7;
   }
-  body[data-theme="white"] .note-text,
-  body[data-theme="light-blue"] .note-text,
-  body[data-theme="pink"] .note-text,
-  body[data-theme="purple"] .note-text { color: #0f172a; }
-  body[data-theme="white"] .note-meta,
-  body[data-theme="light-blue"] .note-meta,
-  body[data-theme="pink"] .note-meta,
-  body[data-theme="purple"] .note-meta,
-  body[data-theme="white"] .note-empty,
-  body[data-theme="light-blue"] .note-empty,
-  body[data-theme="pink"] .note-empty,
-  body[data-theme="purple"] .note-empty { color: #475569; }
-  body[data-theme="white"] #notes-input,
-  body[data-theme="light-blue"] #notes-input,
-  body[data-theme="pink"] #notes-input,
-  body[data-theme="purple"] #notes-input {
-    background: rgba(255, 255, 255, 0.75);
-    border-color: rgba(15, 23, 42, 0.18);
-    color: #0f172a;
-    caret-color: #0ea5e9;
+
+  /* Clean glass tooltip (replaces the native title bubble) */
+  .mini-tip {
+    position: fixed;
+    z-index: 50;
+    max-width: 220px;
+    padding: 6px 10px;
+    border-radius: 9px;
+    background: rgba(15, 23, 42, 0.96);
+    border: 1.5px solid rgba(255, 255, 255, 0.28);
+    border-top: 1px solid rgba(255, 255, 255, 0.45);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    color: #e8edff;
+    font-family: 'Comfortaa', 'Segoe UI', system-ui, sans-serif;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.35;
+    letter-spacing: 0.01em;
+    text-align: center;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(4px);
+    transition: opacity 0.16s ease, transform 0.16s ease;
   }
-  body[data-theme="white"] #notes-input::placeholder,
-  body[data-theme="light-blue"] #notes-input::placeholder,
-  body[data-theme="pink"] #notes-input::placeholder,
-  body[data-theme="purple"] #notes-input::placeholder { color: rgba(71, 85, 105, 0.6); }
-  body[data-theme="white"] .close,
-  body[data-theme="light-blue"] .close,
-  body[data-theme="pink"] .close,
-  body[data-theme="purple"] .close {
-    background: rgba(15, 23, 42, 0.08);
-    border-color: rgba(15, 23, 42, 0.2);
-    color: #475569;
-  }
-  body[data-theme="white"] .note-item,
-  body[data-theme="light-blue"] .note-item,
-  body[data-theme="pink"] .note-item,
-  body[data-theme="purple"] .note-item { background: rgba(15, 23, 42, 0.05); border-color: rgba(15, 23, 42, 0.12); }
-  body[data-theme="white"] .note-act,
-  body[data-theme="light-blue"] .note-act,
-  body[data-theme="pink"] .note-act,
-  body[data-theme="purple"] .note-act { background: rgba(15, 23, 42, 0.08); border-color: rgba(15, 23, 42, 0.16); color: #475569; }
-  body[data-theme="white"] .note-act:hover,
-  body[data-theme="light-blue"] .note-act:hover,
-  body[data-theme="pink"] .note-act:hover,
-  body[data-theme="purple"] .note-act:hover { background: rgba(15, 23, 42, 0.18); color: #0f172a; }
-  /* Colored themes tint the card's glass */
-  body[data-theme="black"] #notes-glass { background: linear-gradient(165deg, rgba(25, 25, 25, 0.9), rgba(0, 0, 0, 0.93) 100%); }
-  body[data-theme="dark-blue"] #notes-glass { background: linear-gradient(165deg, rgba(37, 99, 235, 0.85), rgba(23, 37, 84, 0.9) 60%, rgba(15, 23, 42, 0.92) 100%); }
-  body[data-theme="green"] #notes-glass { background: linear-gradient(165deg, rgba(16, 185, 129, 0.85), rgba(6, 95, 70, 0.9) 60%, rgba(4, 60, 44, 0.92) 100%); }
-  body[data-theme="red"] #notes-glass { background: linear-gradient(165deg, rgba(239, 68, 68, 0.85), rgba(153, 27, 27, 0.9) 60%, rgba(69, 10, 10, 0.92) 100%); }
-  body[data-theme="pink"] #notes-glass { background: linear-gradient(165deg, rgba(254, 205, 211, 0.95), rgba(236, 72, 153, 0.85) 60%, rgba(190, 24, 93, 0.9) 100%); }
-  body[data-theme="purple"] #notes-glass { background: linear-gradient(165deg, rgba(237, 233, 254, 0.95), rgba(139, 92, 246, 0.85) 60%, rgba(76, 29, 149, 0.9) 100%); }
-  body[data-theme="light-blue"] #notes-glass { background: linear-gradient(165deg, rgba(219, 234, 254, 0.95), rgba(56, 189, 248, 0.85) 60%, rgba(14, 116, 221, 0.9) 100%); }
+  .mini-tip.visible { opacity: 1; transform: translateY(0); }
+
 </style>
 <script>
-  // Follow the app's theme palette (chosen in the planner, persisted in 'wolf-theme').
-  try { document.body.dataset.theme = localStorage.getItem('wolf-theme') || ''; } catch (e) {}
+  // The app ships with a single signature look: the black glass theme.
+  document.body.dataset.theme = 'black';
 </script>
 </head>
 <body>
@@ -329,6 +303,50 @@
       writeClipboard: (t) => navigator.clipboard.writeText(t).then(() => true),
       closeNotes() {},
     };
+
+    // === Clean glass tooltips (replaces native title bubbles) ===
+    const tipEl = document.createElement('div');
+    tipEl.className = 'mini-tip';
+    document.body.appendChild(tipEl);
+    let tipTimer = null;
+    function tipFor(el, text) {
+      if (tipTimer) clearTimeout(tipTimer);
+      tipTimer = setTimeout(() => {
+        tipEl.textContent = text;
+        const r = el.getBoundingClientRect();
+        const w = Math.min(220, tipEl.offsetWidth || 120);
+        const h = tipEl.offsetHeight || 26;
+        const cw = document.documentElement.clientWidth;
+        const ch = document.documentElement.clientHeight;
+        let left = r.left + r.width / 2 - w / 2;
+        left = Math.max(4, Math.min(left, cw - w - 4));
+        const top = r.top > 70 ? r.top - h - 10 : r.bottom + 10;
+        tipEl.style.left = left + 'px';
+        tipEl.style.top = Math.max(4, Math.min(top, ch - h - 4)) + 'px';
+        tipEl.classList.add('visible');
+      }, 160);
+    }
+    function tipHide() {
+      if (tipTimer) { clearTimeout(tipTimer); tipTimer = null; }
+      tipEl.classList.remove('visible');
+    }
+    document.addEventListener('mouseover', (e) => {
+      const el = e.target.closest('[title],[data-tip]');
+      if (!el) return tipHide();
+      let text = el.dataset.tip;
+      if (text == null) {
+        text = el.getAttribute('title') || '';
+        if (!text) return tipHide();
+        el.setAttribute('data-tip', text);
+        el.removeAttribute('title');
+      }
+      tipFor(el, text);
+    });
+    document.addEventListener('mouseout', (e) => {
+      const from = e.target.closest && e.target.closest('[title],[data-tip]');
+      const to = e.relatedTarget && e.relatedTarget.closest ? e.relatedTarget.closest('[title],[data-tip]') : null;
+      if (from && from !== to) tipHide();
+    });
 
     // Notes are shared with the main app through localStorage (same file://
     // origin in Electron), keyed 'wolf-notes'.
