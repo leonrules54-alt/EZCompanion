@@ -110,11 +110,36 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('button-hover', handler);
     return () => ipcRenderer.removeListener('button-hover', handler);
   },
-  setRingOpen: (open) => ipcRenderer.send('button-ring-open', !!open),
 
   // Assistant window + chat
   openAssistant: () => ipcRenderer.send('open-assistant'),
   closeAssistant: () => ipcRenderer.send('assistant-close'),
+
+  // Info window (clock / weather / quote)
+  openInfo: () => ipcRenderer.send('open-info'),
+  closeInfo: () => ipcRenderer.send('info-close'),
+  // "Full view" from the assistant: open the whole workspace on one screen.
+  fullView: () => ipcRenderer.send('full-view'),
+
+  // Daily-stats page (today's progress dashboard)
+  openStats: () => ipcRenderer.send('open-stats'),
+  closeStats: () => ipcRenderer.send('stats-close'),
+  // The planner renderer pushes fresh data to the stats window whenever it
+  // changes, so the dashboard updates live instead of polling stale storage.
+  sendStats: (payload) => ipcRenderer.send('stats-update', payload),
+  onStatsData: (callback) => {
+    const handler = (event, payload) => callback(payload);
+    ipcRenderer.on('stats-data', handler);
+    return () => ipcRenderer.removeListener('stats-data', handler);
+  },
+  // The stats window asks the planner renderer (data owner) for the current
+  // snapshot on load so it doesn't have to wait for the next change.
+  requestStats: () => ipcRenderer.send('stats-request'),
+  onStatsRequest: (callback) => {
+    const handler = () => callback();
+    ipcRenderer.on('stats-request', handler);
+    return () => ipcRenderer.removeListener('stats-request', handler);
+  },
   sendAssistantMessage: (text) => ipcRenderer.send('assistant-message', text),
   onAssistantReply: (callback) => {
     const handler = (event, reply) => callback(reply);
@@ -128,6 +153,67 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('assistant-message', handler);
   },
   sendAssistantReply: (reply) => ipcRenderer.send('assistant-reply', reply),
+  // Online/offline mode sync (toggle lives in the floating assistant window).
+  setAssistantMode: (mode) => ipcRenderer.send('assistant-set-mode', mode),
+  onAssistantSetMode: (callback) => {
+    const handler = (event, data) => callback(data && data.mode);
+    ipcRenderer.on('assistant-set-mode', handler);
+    return () => ipcRenderer.removeListener('assistant-set-mode', handler);
+  },
+  onAssistantGetMode: (callback) => {
+    const handler = () => callback();
+    ipcRenderer.on('assistant-get-mode', handler);
+    return () => ipcRenderer.removeListener('assistant-get-mode', handler);
+  },
+  exportData: (json) => ipcRenderer.invoke('export-data', json),
+  resolveConflict: (id) => ipcRenderer.send('conflict-resolve', id),
+  onConflictResolve: (callback) => {
+    const handler = (event, data) => callback(data);
+    ipcRenderer.on('conflict-resolve', handler);
+    return () => ipcRenderer.removeListener('conflict-resolve', handler);
+  },
+  sendAssistantMode: (mode) => ipcRenderer.send('assistant-mode-state', mode),
+  onAssistantMode: (callback) => {
+    const handler = (event, mode) => callback(mode);
+    ipcRenderer.on('assistant-mode-state', handler);
+    return () => ipcRenderer.removeListener('assistant-mode-state', handler);
+  },
+  // Daily-protocol accent sync (the planner renderer owns the choice and
+  // broadcasts it so assistant/notes/info/stats/week match its color).
+  sendProtocol: (protocol) => ipcRenderer.send('protocol-state', protocol),
+  onProtocol: (callback) => {
+    const handler = (event, protocol) => callback(protocol);
+    ipcRenderer.on('protocol-state', handler);
+    return () => ipcRenderer.removeListener('protocol-state', handler);
+  },
+  getProtocol: () => ipcRenderer.send('protocol-get'),
+  onProtocolGet: (callback) => {
+    const handler = () => callback();
+    ipcRenderer.on('protocol-get', handler);
+    return () => ipcRenderer.removeListener('protocol-get', handler);
+  },
+  // Centered startup window (boot.html): click through → main closes it and
+  // tells the planner to continue (show the daily protocol picker).
+  bootContinue: () => ipcRenderer.send('boot-continue'),
+  onBootDone: (callback) => {
+    const handler = () => callback();
+    ipcRenderer.on('boot-done', handler);
+    return () => ipcRenderer.removeListener('boot-done', handler);
+  },
+
+  // Smooth card summon: main tells a card window it's being shown/hidden so
+  // the renderer can replay its entrance/exit animation (see summon.js).
+  onSummonAnimate: (callback) => {
+    const handler = () => callback();
+    ipcRenderer.on('summon-animate', handler);
+    return () => ipcRenderer.removeListener('summon-animate', handler);
+  },
+  onSummonLeave: (callback) => {
+    const handler = () => callback();
+    ipcRenderer.on('summon-leave', handler);
+    return () => ipcRenderer.removeListener('summon-leave', handler);
+  },
+  summonLeaveDone: () => ipcRenderer.send('summon-leave-done'),
 
   // Clipboard history
   getClipboardHistory: () => ipcRenderer.invoke('get-clipboard-history'),

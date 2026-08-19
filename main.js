@@ -1,9 +1,9 @@
-const { app, BrowserWindow, screen, ipcMain, globalShortcut, desktopCapturer, clipboard, nativeImage, Tray, Menu, shell } = require('electron');
+const { app, BrowserWindow, screen, ipcMain, globalShortcut, desktopCapturer, clipboard, nativeImage, Tray, Menu, shell, dialog } = require('electron');
 const crypto = require('crypto');
 
 // Bumped whenever the summon/wake/screen logic changes — shown in the tray
 // menu so a running app can be identified as new or stale at a glance.
-const BUILD_TAG = 'summon-v13';
+const BUILD_TAG = 'summon-v14';
 const WOLF_DEBUG = !!process.env.WOLF_DEBUG;
 // dlog() keeps the old console behavior when WOLF_DEBUG is set, and ALWAYS
 // appends to a per-launch debug log (userData/wolf-debug.log) so window/
@@ -97,16 +97,12 @@ function hardenWindow(win) {
 
 let petWindow = null;
 let statusWindow = null;
-let buttonWindow = null;      // floating launcher button (top-left, ring menu on hover)
-let buttonRingOpen = false;   // whether the launcher's ring menu is currently open
-let buttonLatched = false;    // cursor rested on the button — stay interactive until it leaves the window
 let screenshotOverlay = null;
 let screenshotDisplay = null; // display the screenshot overlay currently targets
 let interactiveBounds = [];           // [{x, y, w, h} window-relative coords]
 let lastBoundsLog = '';               // last logged bounds JSON (dedupe the 400ms refresh)
 
 let cursorPollInterval = null;
-let buttonPollInterval = null;
 let mouseIgnored = true;
 
 // === Multi-monitor anchoring ===
@@ -147,8 +143,7 @@ function anchorDisplay() {
 
 // Layout: the pet is a slim always-visible sidebar pinned below the status
 // pill in the top-right corner. The planner (deadlines + daily tasks) fills
-// the whole window. The floating launcher button lives in its own tiny
-// window in the top-LEFT corner of the screen.
+// the whole window.
 const SIDEBAR_W = 430;
 // The planner starts a little lower than the old 58px so the status strip
 // has breathing room and the whole app feels less "hugged" against the top.
@@ -190,7 +185,9 @@ function createPetWindow() {
     skipTaskbar: true,
     resizable: false,
     hasShadow: false,
-    show: true,
+    // Hidden until the user clicks through the startup screen — the planner
+    // must never show before/behind the boot card.
+    show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -229,6 +226,46 @@ function sendToPet(channel, payload) {
   }
 }
 
+// === Smooth card summon (Jarvis-style fade-up) ===
+// The floating glass cards (assistant, notes, info, stats, week strip, focus
+// bar, hover card) each load summon.js, which replays a clean entrance
+// animation whenever main shows the window and a quick fade-out before main
+// hides it — instead of the window popping in/out instantly.
+function sendToCard(win, channel) {
+  if (!win || win.isDestroyed()) return;
+  if (win.webContents.isLoading()) {
+    win.webContents.once('did-finish-load', () => win.webContents.send(channel));
+  } else {
+    win.webContents.send(channel);
+  }
+}
+
+// Show a card window and let its glass fade up. `inactive` (hover card) shows
+// without stealing focus.
+function showCardWindow(win, opts) {
+  if (!win || win.isDestroyed()) return;
+  if (opts && opts.inactive) win.showInactive();
+  else win.show();
+  // Let the compositor paint the window first, then start the entrance.
+  setTimeout(() => sendToCard(win, 'summon-animate'), 40);
+}
+
+// Windows that are mid-fade-out, keyed by webContents id, so the renderer's
+// "fade finished" ack hides exactly the right window.
+const pendingCardHide = new Map();
+
+// Hide a card window after its glass fades out (~170ms). Falls back to an
+// instant hide if the renderer is busy/hung.
+function hideCardWindow(win) {
+  if (!win || win.isDestroyed() || !win.isVisible()) return;
+  pendingCardHide.set(win.webContents.id, win);
+  win._hideFallback = setTimeout(() => {
+    pendingCardHide.delete(win.webContents.id);
+    if (win && !win.isDestroyed()) win.hide();
+  }, 240);
+  sendToCard(win, 'summon-leave');
+}
+
 // If a renderer process dies (crash), reload the window and re-apply the
 // current sleep/mode state so the app recovers instead of going blank.
 function watchRenderer(win, label) {
@@ -265,6 +302,9 @@ function createStatusWindow() {
     resizable: false,
     hasShadow: false,
     focusable: false,
+    // Hidden until boot completes — nothing (not even the slim status bar)
+    // should appear before/behind the startup screen.
+    show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -302,7 +342,7 @@ function createFocusBarWindow() {
     // Same width + right edge as the planner sidebar, parked just below the
     // status bar — reads as the planner's own slim focus strip.
     width: SIDEBAR_W,
-    height: 64,
+    height: 76,
     x: wa.x + wa.width - SIDEBAR_W - 8,
     y: wa.y + 60,
     frame: false,
@@ -331,122 +371,29 @@ function createFocusBarWindow() {
 // sleep / peek / wake while a session is still running).
 function ensureFocusBar() {
   createFocusBarWindow();
-  if (focusBarWindow && !focusBarWindow.isDestroyed()) focusBarWindow.show();
+  if (focusBarWindow && !focusBarWindow.isDestroyed()) showCardWindow(focusBarWindow);
 }
 
-// === Floating launcher button window (top-left corner of the screen) ===
-// A tiny transparent window holding the app's "menu" button. Clicking the
-// button opens the radial ring menu (the app's feature menu);
-// the ring closes when the cursor leaves the window. Click-through except
-// over the button (or the open ring), so it never blocks clicks aimed at
-// whatever sits behind it in the corner.
-const BTN_SIZE = 280;
-const BTN_CENTER = BTN_SIZE / 2;   // the button sits dead-centre of the window
-// The launcher's top edge offset inside the work area (matches
-// buttonPlacement). The notes card and hover card park BELOW the launcher's
-// bottom edge so they can never cover the button.
-const BTN_Y_TOP = 24;
+// Top offset (inside the work area) shared by the assistant chat, quick
+// notes and stats windows so their top edges align. The old floating
+// launcher button + radial ring menu are gone — its actions now live as
+// suggestion chips inside the assistant.
+const TOP_Y = 24;
 
-// The launcher parks top-left, flush against the left edge of the planner
-// sidebar (the position users expect). The notes card and hover card used
-// to pop up over this same spot and hide the button — they now park BELOW
-// the button (see notesY / showHoverCard), so nothing can cover it. During
-// Week view the launcher moves to the bottom-right corner, below the week
-// strip, so it never covers it.
-function buttonPlacement(wa) {
-  if (activeMode === 'week') {
-    return { x: Math.max(wa.x, wa.x + wa.width - BTN_SIZE - 16), y: Math.max(wa.y, wa.y + wa.height - BTN_SIZE - 16) };
-  }
-  // Clamped so a very narrow display can't push the window off-screen.
-  return {
-    x: Math.max(wa.x, wa.x + wa.width - SIDEBAR_W - 8 - 8 - BTN_SIZE),
-    y: wa.y + BTN_Y_TOP,
-  };
-}
-
-// Move the launcher window to wherever the current view mode wants it.
-function positionButtonWindow() {
-  if (!buttonWindow || buttonWindow.isDestroyed()) return;
-  const p = buttonPlacement(anchorDisplay().workArea);
-  buttonWindow.setBounds({ x: p.x, y: p.y, width: BTN_SIZE, height: BTN_SIZE });
-}
-
-function createButtonWindow() {
-  if (buttonWindow) return;
-  const wa = anchorDisplay().workArea;
-  const p = buttonPlacement(wa);
-
-  buttonWindow = new BrowserWindow({
-    width: BTN_SIZE,
-    height: BTN_SIZE,
-    x: p.x,
-    y: p.y,
-    frame: false,
-    transparent: true,
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    resizable: false,
-    hasShadow: false,
-    show: true,
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-      backgroundThrottling: false,
-    },
-  });
-
-  hardenWindow(buttonWindow);
-  loadAppFile(buttonWindow, 'button.html');
-  buttonWindow.setIgnoreMouseEvents(true, { forward: true });
-  buttonWindow.on('closed', () => {
-    buttonWindow = null;
-    buttonRingOpen = false;
-    buttonLatched = false;
-    if (buttonPollInterval) { clearInterval(buttonPollInterval); buttonPollInterval = null; }
-  });
-
-  // Poll: the button area is always hoverable; once the cursor rests on the
-  // button (or the ring menu is open) the whole window stays interactive so
-  // every segment receives clicks, until the cursor leaves the window. The
-  // ring itself is opened/closed by CLICKING the button (no hover-hold).
-  if (buttonPollInterval) clearInterval(buttonPollInterval);
-  buttonPollInterval = setInterval(() => {
-    if (!buttonWindow || buttonWindow.isDestroyed()) return;
-    const pos = screen.getCursorScreenPoint();
-    const b = buttonWindow.getBounds();
-    const inWindow = pos.x >= b.x - 4 && pos.x <= b.x + b.width + 4 && pos.y >= b.y - 4 && pos.y <= b.y + b.height + 4;
-    // Hover-able button pad: a generous circle around the window centre
-    // (scaled to the bigger gem).
-    const inButton = Math.hypot(pos.x - (b.x + BTN_CENTER), pos.y - (b.y + BTN_CENTER)) <= 74;
-    // Assistant bubble: a 💬 chip at the window's top-left corner
-    // ("top middle-left" of the launcher). It must stay clickable whenever
-    // the cursor is over it, even when the ring is closed.
-    const inAssist = Math.hypot(pos.x - (b.x + 40), pos.y - (b.y + 40)) <= 34;
-    // Latch: once the cursor has rested on the button, keep the window
-    // interactive until the cursor leaves — no click-through hiccup while
-    // sliding from the button onto a ring segment.
-    if (inButton || inAssist) buttonLatched = true;
-    else if (!inWindow) buttonLatched = false;
-
-    const over = buttonLatched || (buttonRingOpen && inWindow);
-    buttonWindow.setIgnoreMouseEvents(!over, { forward: true });
-    // The renderer paints the hover state and closes the ring when the
-    // cursor leaves the whole window.
-    buttonWindow.webContents.send('button-hover', { active: inButton, inWindow, assist: inAssist });
-  }, 90);
-}
-
-ipcMain.on('button-ring-open', (_e, open) => {
-  buttonRingOpen = !!open;
-});
-
-// === Quick Notes window (floats to the LEFT of the sidebar, full height) ===
+// === Middle-column layout (notes / info / stats) ===
+// The space between the assistant chat (left) and the planner sidebar (right,
+// or the screen edge in Week view) hosts three cards: Notes, Info and the
+// Stats dashboard. Notes and Info share the TOP row (Notes left, Info fills
+// the space to its right); Stats fills everything below. The layout is the
+// same in every view — in Week view it just drops below the week strip.
 const NOTES_W = 340;
+const NOTES_H = 320;
+const STATS_MIN_W = 480;
 let notesWindow = null;
 let notesHideForCapture = false; // suppress blur-close while the screenshot hides us
 let notesHiddenBySleep = false; // notes were open when the app slept — restore on wake
+let infoWindow = null;
+let infoHiddenBySleep = false;  // info was open when the app slept — restore on wake
 
 // Height of the week strip window for a given work-area height (kept in sync
 // with createWeekWindow).
@@ -454,40 +401,74 @@ function weekStripHeight(waHeight) {
   return Math.min(430, Math.max(280, Math.round(waHeight * 0.32)));
 }
 
-// Where the notes card's top edge sits. Normally it parks BELOW the floating
-// launcher button (top-left, flush against the sidebar) so the card can
-// never cover it — that overlap used to make the launcher "disappear".
-// During Week view the strip owns the top of the screen, so the card parks
-// just below the strip instead (and the launcher is bottom-right there).
-function notesY(wa) {
-  return activeMode === 'week' ? wa.y + weekStripHeight(wa.height) + 14 : wa.y + BTN_Y_TOP + BTN_SIZE + 14;
+// Shared edges of the middle column.
+function midTop(wa) {
+  return activeMode === 'week' ? wa.y + weekStripHeight(wa.height) + 14 : wa.y + TOP_Y;
+}
+function midLeft(wa) {
+  return wa.x + ASSISTANT_W + 12;
+}
+// The middle column ALWAYS stops at the planner sidebar's left edge — even in
+// Week view, where the planner is hidden. That right-hand slot is reused for
+// Notes + Info instead of letting Stats sprawl into it.
+function midRight(wa) {
+  return wa.x + wa.width - SIDEBAR_W - 8 - 12;
 }
 
+// Normal view: Notes + Info share the TOP row of the middle column (Notes
+// left, Info right) and Stats fills the bottom. Week view: Notes + Info stack
+// in the planner's old slot on the right; Stats keeps the middle column.
+function notesY(wa) { return midTop(wa); }
+function notesX(wa) {
+  return activeMode === 'week' ? wa.x + wa.width - SIDEBAR_W - 8 : midLeft(wa);
+}
+function notesW(wa) { return NOTES_W; }
+function notesH(wa) { return NOTES_H; }
+
+// Info card geometry.
+function infoY(wa) {
+  return activeMode === 'week' ? midTop(wa) + NOTES_H + 14 : midTop(wa);
+}
+function infoX(wa) {
+  return activeMode === 'week' ? notesX(wa) : midLeft(wa) + NOTES_W + 12;
+}
+function infoW(wa) {
+  if (activeMode === 'week') return NOTES_W;
+  return Math.max(260, midRight(wa) - infoX(wa));
+}
+function infoH(wa) {
+  if (activeMode === 'week') return Math.max(200, wa.y + wa.height - 12 - infoY(wa));
+  return NOTES_H;
+}
+
+// Stats dashboard geometry (fills the bottom of the middle column).
+function statsY(wa) {
+  // Normal: below the Notes + Info row. Week: Notes + Info live in the right
+  // slot, so Stats fills the whole middle column below the strip.
+  return activeMode === 'week' ? midTop(wa) : midTop(wa) + NOTES_H + 14;
+}
+function statsX(wa) { return midLeft(wa); }
+function statsWidth(wa) { return Math.max(STATS_MIN_W, midRight(wa) - midLeft(wa)); }
+function statsHeight(wa) { return Math.max(300, wa.y + wa.height - 12 - statsY(wa)); }
+
 function createNotesWindow() {
-  if (notesWindow) return;
+  if (notesWindow && !notesWindow.isDestroyed()) return;
   const wa = anchorDisplay().workArea;
-  const sideH = petHeight(wa.height); // same basis as the pet window
   const nY = notesY(wa);
   notesWindow = new BrowserWindow({
-    width: NOTES_W,
-    // Full sidebar height by default so the whole history is visible at a
-    // glance (clamped so it never runs past the bottom of the work area and
-    // never below the 300px minHeight); the user can drag the edges to
-    // resize afterwards (resizable).
-    height: Math.max(300, Math.min(Math.max(300, sideH), wa.height - (nY - wa.y))),
-  // Right edge sits just left of the sidebar; clamped to the screen on
-  // narrow displays. Height shrinks to fit below the launcher button.
-  x: Math.max(wa.x, wa.x + wa.width - SIDEBAR_W - 8 - NOTES_W - 12),
-  y: nY,
-  frame: false,
-  transparent: true,
-  alwaysOnTop: true,
-  skipTaskbar: true,
-  resizable: true, // user can make it longer vertically/horizontally
-  minWidth: 260,
-  minHeight: 300,
-  hasShadow: false,
-  show: false,
+    width: notesW(wa),
+    height: notesH(wa),
+    x: notesX(wa),
+    y: nY,
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    resizable: true, // user can make it longer vertically/horizontally
+    minWidth: 260,
+    minHeight: 300,
+    hasShadow: false,
+    show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -498,42 +479,283 @@ function createNotesWindow() {
 
   hardenWindow(notesWindow);
   loadAppFile(notesWindow, 'notes.html');
-  // Popup behaviour: clicking anywhere else dismisses it. Programmatic hides
-  // (e.g. the screenshot capture hiding every window) are excluded so the
-  // popup survives and comes back with everything else.
-  notesWindow.on('blur', () => { if (!notesHideForCapture && !notesHiddenBySleep) closeNotesWindow(); });
+  // Stay open until the user closes it (✕) — closing on blur made notes
+  // vanish whenever focus moved to the chat or stats window, so they could
+  // never be open together.
   notesWindow.on('closed', () => { notesWindow = null; notesHiddenBySleep = false; });
 }
 
 function toggleNotesWindow() {
+  if (booting) return; // the startup card owns the screen until clicked through
   if (!notesWindow || notesWindow.isDestroyed()) createNotesWindow();
   if (!notesWindow) return;
   if (notesWindow.isVisible()) {
     closeNotesWindow();
   } else {
-    notesWindow.show();
+    // Notes coexist with the assistant chat and the stats page — they are
+    // separate windows, so opening one never dismisses the others.
+    showCardWindow(notesWindow);
     notesWindow.focus();
   }
 }
 
 // === Assistant window (chat that manages your day) ===
 // A tall glass chat window parked against the LEFT edge of the screen,
-// below the launcher button's top edge. Opened from the 💬 bubble on the
-// launcher (or the ring's Assistant action). Messages flow to the pet
-// renderer — it owns the data — and replies flow back here.
+// below the chat trigger's top edge. Opened from the 💬 bubble in the
+// top-left corner. Messages flow to the pet renderer — it owns the data —
+// and replies flow back here.
 const ASSISTANT_W = 400;
 let assistantWindow = null;
 let assistantHiddenBySleep = false;
 
+// The AI chat stays in the same top-left spot in every view (the week strip
+// starts to its right, so it never needs to dodge the chat).
+function assistantY(wa) {
+  return wa.y + TOP_Y;
+}
+function assistantHeight(wa) {
+  return Math.max(360, wa.height - (assistantY(wa) - wa.y) - 12);
+}
+
 function createAssistantWindow() {
-  if (assistantWindow) return;
+  if (assistantWindow && !assistantWindow.isDestroyed()) return;
   const wa = anchorDisplay().workArea;
   assistantWindow = new BrowserWindow({
     width: ASSISTANT_W,
     // Full-height left column ("takes up the left screen").
-    height: Math.max(360, wa.height - BTN_Y_TOP - 12),
-    x: Math.max(wa.x, wa.x + 8),
-    y: wa.y + BTN_Y_TOP,
+    height: assistantHeight(wa),
+    x: wa.x, // flush against the left edge of the screen
+    y: assistantY(wa),
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    resizable: true, // user can drag the right edge to widen it
+    minWidth: 280,
+    minHeight: 360,
+    hasShadow: false,
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  hardenWindow(assistantWindow);
+  loadAppFile(assistantWindow, 'assistant.html');
+  // Once the window's listeners are wired, ask the planner for the current
+  // online/offline mode so the toggle reflects reality on first paint.
+  assistantWindow.webContents.on('did-finish-load', () => sendToPet('assistant-get-mode'));
+  // Stay open until the user closes it (✕) — closing on blur made the chat
+  // vanish whenever focus moved elsewhere, forcing users to re-summon it.
+  assistantWindow.on('closed', () => { assistantWindow = null; assistantHiddenBySleep = false; });
+}
+
+function toggleAssistantWindow() {
+  if (booting) return; // the startup card owns the screen until clicked through
+  if (!assistantWindow || assistantWindow.isDestroyed()) createAssistantWindow();
+  if (!assistantWindow) return;
+  if (assistantWindow.isVisible()) closeAssistantWindow();
+  else {
+    // The chat stays open alongside notes and stats.
+    showCardWindow(assistantWindow);
+    assistantWindow.focus();
+  }
+}
+
+function closeAssistantWindow() {
+  if (assistantWindow && !assistantWindow.isDestroyed()) hideCardWindow(assistantWindow);
+}
+
+// === Chat trigger (a 💬 bubble pinned to the very top-left corner) ===
+const CHAT_TRIGGER_SIZE = 76;
+let chatTriggerWindow = null;
+let chatTriggerPoll = null;
+
+// The 💬 bubble stays in the top-left corner in every view, right where the
+// AI chat opens.
+function chatTriggerY(wa) {
+  return wa.y + 4;
+}
+
+function createChatTriggerWindow() {
+  if (chatTriggerWindow) return;
+  const wa = anchorDisplay().workArea;
+  chatTriggerWindow = new BrowserWindow({
+    width: CHAT_TRIGGER_SIZE,
+    height: CHAT_TRIGGER_SIZE,
+    x: wa.x + 4,
+    y: chatTriggerY(wa),
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    resizable: false,
+    hasShadow: false,
+    // Hidden until boot completes (the chat bubble should not show early).
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      backgroundThrottling: false,
+    },
+  });
+  hardenWindow(chatTriggerWindow);
+  loadAppFile(chatTriggerWindow, 'chat-trigger.html');
+  watchRenderer(chatTriggerWindow, 'chat-trigger');
+  chatTriggerWindow.setIgnoreMouseEvents(true, { forward: true });
+  chatTriggerWindow.on('closed', () => {
+    chatTriggerWindow = null;
+    if (chatTriggerPoll) { clearInterval(chatTriggerPoll); chatTriggerPoll = null; }
+  });
+
+  // Click-through except over the bubble: poll the cursor under it.
+  if (chatTriggerPoll) clearInterval(chatTriggerPoll);
+  chatTriggerPoll = setInterval(() => {
+    if (!chatTriggerWindow || chatTriggerWindow.isDestroyed()) return;
+    const pos = screen.getCursorScreenPoint();
+    const b = chatTriggerWindow.getBounds();
+    const cx = b.x + b.width / 2, cy = b.y + b.height / 2;
+    const over = Math.hypot(pos.x - cx, pos.y - cy) <= 42;
+    chatTriggerWindow.setIgnoreMouseEvents(!over, { forward: true });
+    chatTriggerWindow.webContents.send('button-hover', { chatHover: over });
+  }, 90);
+}
+
+// === Daily-stats window (today's progress dashboard) ===
+let statsWindow = null;
+let statsHiddenBySleep = false; // stats were open when the app slept — restore on wake
+
+function createStatsWindow() {
+  if (statsWindow && !statsWindow.isDestroyed()) return;
+  const wa = anchorDisplay().workArea;
+  statsWindow = new BrowserWindow({
+    width: statsWidth(wa),
+    height: statsHeight(wa),
+    x: statsX(wa),
+    y: statsY(wa),
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    resizable: false,
+    hasShadow: false,
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      backgroundThrottling: false,
+    },
+  });
+  hardenWindow(statsWindow);
+  loadAppFile(statsWindow, 'stats.html');
+  // Pull a fresh snapshot the moment the page is fully loaded (fonts included)
+  // so the dashboard fills immediately instead of waiting for its 2s poll.
+  statsWindow.webContents.on('did-finish-load', () => {
+    if (statsWindow && !statsWindow.isDestroyed()) sendToPet('stats-request', {});
+  });
+  statsWindow.on('closed', () => { statsWindow = null; statsHiddenBySleep = false; });
+}
+
+function toggleStatsWindow() {
+  if (booting) return; // the startup card owns the screen until clicked through
+  if (!statsWindow || statsWindow.isDestroyed()) createStatsWindow();
+  if (!statsWindow) return;
+  if (statsWindow.isVisible()) closeStatsWindow();
+  else {
+    // Stats coexist with the chat and notes.
+    showCardWindow(statsWindow);
+    statsWindow.focus();
+  }
+}
+
+function closeStatsWindow() {
+  if (statsWindow && !statsWindow.isDestroyed()) hideCardWindow(statsWindow);
+}
+
+// === Startup screen (full-screen Jarvis scan + centered status card) ===
+// The window spans the WHOLE display (transparent) so the scan light can
+// sweep the entire screen; the status card then pops up in the center.
+// The app chrome stays hidden while it's up; clicking through restores it.
+let bootWindow = null;
+let booting = false; // true while the startup screen is up — gates chrome visibility
+
+function bootBounds() {
+  // Full display bounds (not workArea) so the scan covers taskbar too.
+  const b = anchorDisplay().bounds;
+  return { x: b.x, y: b.y, width: b.width, height: b.height };
+}
+
+function createBootWindow() {
+  if (bootWindow && !bootWindow.isDestroyed()) return;
+  const b = bootBounds();
+  bootWindow = new BrowserWindow({
+    width: b.width,
+    height: b.height,
+    x: b.x,
+    y: b.y,
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    resizable: false,
+    hasShadow: false,
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      backgroundThrottling: false,
+    },
+  });
+  hardenWindow(bootWindow);
+  loadAppFile(bootWindow, 'boot.html');
+  // Pull a fresh status snapshot the moment the page is fully loaded so the
+  // readout fills instantly instead of waiting on its 2s poll.
+  bootWindow.webContents.on('did-finish-load', () => {
+    if (bootWindow && !bootWindow.isDestroyed()) sendToPet('stats-request', {});
+  });
+  bootWindow.on('closed', () => { bootWindow = null; });
+}
+
+function showBootWindow() {
+  if (!bootWindow || bootWindow.isDestroyed()) createBootWindow();
+  if (!bootWindow || bootWindow.isDestroyed()) return;
+  booting = true;
+  // Hide the app chrome so only the centered card is visible.
+  if (petWindow && !petWindow.isDestroyed()) petWindow.hide();
+  if (statusWindow && !statusWindow.isDestroyed()) statusWindow.hide();
+  if (chatTriggerWindow && !chatTriggerWindow.isDestroyed()) chatTriggerWindow.hide();
+  if (weekWindow && !weekWindow.isDestroyed() && weekWindow.isVisible()) weekWindow.hide();
+  if (focusBarWindow && !focusBarWindow.isDestroyed()) focusBarWindow.hide();
+  bootWindow.setBounds(bootBounds());
+  if (!bootWindow.isVisible()) bootWindow.show();
+  bootWindow.setAlwaysOnTop(true);
+  bootWindow.moveTop();
+  bootWindow.focus();
+}
+
+function closeBootWindow() {
+  if (bootWindow && !bootWindow.isDestroyed()) bootWindow.close();
+}
+
+// === Info window (clock / weather / quote) ===
+// A compact card below notes — its own window so it never overlaps the
+// planner the way the old in-planner popup did.
+function createInfoWindow() {
+  if (infoWindow && !infoWindow.isDestroyed()) return;
+  const wa = anchorDisplay().workArea;
+  infoWindow = new BrowserWindow({
+    width: infoW(wa),
+    height: infoH(wa),
+    x: infoX(wa),
+    y: infoY(wa),
     frame: false,
     transparent: true,
     alwaysOnTop: true,
@@ -548,24 +770,42 @@ function createAssistantWindow() {
       sandbox: true,
     },
   });
-  hardenWindow(assistantWindow);
-  loadAppFile(assistantWindow, 'assistant.html');
-  assistantWindow.on('blur', () => { if (!assistantHiddenBySleep) closeAssistantWindow(); });
-  assistantWindow.on('closed', () => { assistantWindow = null; assistantHiddenBySleep = false; });
+  hardenWindow(infoWindow);
+  loadAppFile(infoWindow, 'info.html');
+  infoWindow.on('closed', () => { infoWindow = null; infoHiddenBySleep = false; });
 }
 
-function toggleAssistantWindow() {
-  if (!assistantWindow || assistantWindow.isDestroyed()) createAssistantWindow();
-  if (!assistantWindow) return;
-  if (assistantWindow.isVisible()) closeAssistantWindow();
+function toggleInfoWindow() {
+  if (booting) return; // the startup card owns the screen until clicked through
+  if (!infoWindow || infoWindow.isDestroyed()) createInfoWindow();
+  if (!infoWindow) return;
+  if (infoWindow.isVisible()) closeInfoWindow();
   else {
-    assistantWindow.show();
-    assistantWindow.focus();
+    showCardWindow(infoWindow);
+    infoWindow.focus();
   }
 }
 
-function closeAssistantWindow() {
-  if (assistantWindow && !assistantWindow.isDestroyed()) assistantWindow.close();
+function closeInfoWindow() {
+  if (infoWindow && !infoWindow.isDestroyed()) hideCardWindow(infoWindow);
+}
+
+// "Full view" from the assistant: bring up the whole workspace on one screen
+// — the AI chat, notes, info, stats and the planner — with no overlaps.
+function openFullView() {
+  if (booting) return; // the startup card owns the screen until clicked through
+  if (activeMode === 'week') setAppMode('tasks');
+  if (!assistantWindow || assistantWindow.isDestroyed()) createAssistantWindow();
+  if (assistantWindow && !assistantWindow.isDestroyed() && !assistantWindow.isVisible()) showCardWindow(assistantWindow);
+  if (!notesWindow || notesWindow.isDestroyed()) createNotesWindow();
+  if (notesWindow && !notesWindow.isDestroyed() && !notesWindow.isVisible()) showCardWindow(notesWindow);
+  if (!infoWindow || infoWindow.isDestroyed()) createInfoWindow();
+  if (infoWindow && !infoWindow.isDestroyed() && !infoWindow.isVisible()) showCardWindow(infoWindow);
+  if (!statsWindow || statsWindow.isDestroyed()) createStatsWindow();
+  if (statsWindow && !statsWindow.isDestroyed() && !statsWindow.isVisible()) showCardWindow(statsWindow);
+  if (petWindow && !petWindow.isDestroyed() && !petWindow.isVisible()) petWindow.show();
+  if (statusWindow && !statusWindow.isDestroyed() && !statusWindow.isVisible()) showCardWindow(statusWindow);
+  relayoutWindows();
 }
 
 // === Hover card (detailed task/deadline preview) ===
@@ -618,9 +858,9 @@ function showHoverCard(payload) {
   // Anchor: card's right edge hugs the planner's left edge (12px gap).
   const baseX = pet ? pet.x - HOVER_CARD_W - 12 : wa.x + 8;
   let x = Math.max(wa.x, Math.min(baseX, wa.x + wa.width - HOVER_CARD_W - 4));
-  // Cards for top rows used to overlap the launcher button (top-left corner)
-  // and hide it — park below the button's bottom edge instead.
-  const minY = wa.y + BTN_Y_TOP + BTN_SIZE + 14;
+  // Cards for top rows can drift up toward the top edge — keep them below
+  // the assistant/chat header line.
+  const minY = wa.y + TOP_Y;
   let y = pet ? pet.y + Math.round(payload.rowTop || 0) - 8 : wa.y + SIDEBAR_TOP;
   y = Math.max(minY, Math.min(y, wa.y + wa.height - 178));
   hoverCardWindow.setBounds({ x, y, width: HOVER_CARD_W, height: 170 });
@@ -628,7 +868,7 @@ function showHoverCard(payload) {
     if (!hoverCardWindow || hoverCardWindow.isDestroyed()) return;
     hoverCardWindow.webContents.send('hover-card-data', payload);
     hoverCardWindow.setAlwaysOnTop(true, 'screen-saver');
-    hoverCardWindow.showInactive();
+    showCardWindow(hoverCardWindow, { inactive: true });
   };
   if (hoverCardWindow.webContents.isLoading()) {
     hoverCardWindow.webContents.once('did-finish-load', present);
@@ -642,7 +882,7 @@ function hideHoverCard() {
 }
 
 function closeNotesWindow() {
-  if (notesWindow && !notesWindow.isDestroyed()) notesWindow.close();
+  if (notesWindow && !notesWindow.isDestroyed()) hideCardWindow(notesWindow);
 }
 
 // === App views: tasks (sidebar) / calendar (sidebar) / week (top strip) ===
@@ -656,31 +896,34 @@ function setAppMode(mode) {
   dlog('app mode:', activeMode);
   if (mode === 'week') {
     createWeekWindow();
-    if (weekWindow && !weekWindow.isDestroyed()) weekWindow.show();
+    if (weekWindow && !weekWindow.isDestroyed()) showCardWindow(weekWindow);
     if (petWindow && !petWindow.isDestroyed()) petWindow.hide();
     if (statusWindow && !statusWindow.isDestroyed()) statusWindow.hide();
-    // Full re-layout: the launcher moves to the bottom-right of the screen
-    // (below the week strip) and an open notes card drops below the strip
-    // instead of overlapping it.
+    // Full re-layout: an open notes card drops below the week strip instead
+    // of overlapping it.
     relayoutWindows();
-    if (buttonWindow && !buttonWindow.isDestroyed()) buttonWindow.show();
+    if (chatTriggerWindow && !chatTriggerWindow.isDestroyed()) chatTriggerWindow.show();
     // Keep the sidebar renderer in sync even while hidden (e.g. so the week
     // view-switch button reads active if the sidebar is ever shown again).
     sendToPet('set-mode', { view: 'week' });
   } else {
-    if (weekWindow && !weekWindow.isDestroyed() && weekWindow.isVisible()) weekWindow.hide();
+    if (weekWindow && !weekWindow.isDestroyed() && weekWindow.isVisible()) hideCardWindow(weekWindow);
     if (petWindow && !petWindow.isDestroyed()) petWindow.show();
-    if (statusWindow && !statusWindow.isDestroyed()) statusWindow.show();
-    // Full re-layout: launcher back to its corner, notes back beside the
-    // sidebar, everything re-anchored for the non-week layout.
+    if (statusWindow && !statusWindow.isDestroyed()) showCardWindow(statusWindow);
+    // Full re-layout: everything re-anchored for the non-week layout.
     relayoutWindows();
-    if (buttonWindow && !buttonWindow.isDestroyed()) buttonWindow.show();
+    if (chatTriggerWindow && !chatTriggerWindow.isDestroyed()) chatTriggerWindow.show();
     sendToPet('set-mode', { view: mode });
   }
 }
 
 // Restore the active mode's windows (used after sleep / peek / capture).
 function restoreModeWindows() {
+  // While the startup card is up, the planner/status/chat MUST stay hidden —
+  // the boot window owns the screen until the user clicks through. The pet
+  // renderer can trigger this on load (syncFocusBar), so this guard is what
+  // actually keeps the planner from popping up next to the Jarvis card.
+  if (booting) return;
   // A running focus session keeps the planner unsummoned — the slim focus
   // bar owns the screen until the session ends.
   if (focusSessionActive) {
@@ -689,14 +932,14 @@ function restoreModeWindows() {
   }
   if (activeMode === 'week') {
     createWeekWindow();
-    if (weekWindow && !weekWindow.isDestroyed()) weekWindow.show();
+    if (weekWindow && !weekWindow.isDestroyed()) showCardWindow(weekWindow);
     relayoutWindows();
-    if (buttonWindow && !buttonWindow.isDestroyed()) buttonWindow.show();
+    if (chatTriggerWindow && !chatTriggerWindow.isDestroyed()) chatTriggerWindow.show();
   } else {
     if (petWindow && !petWindow.isDestroyed()) petWindow.show();
-    if (statusWindow && !statusWindow.isDestroyed()) statusWindow.show();
+    if (statusWindow && !statusWindow.isDestroyed()) showCardWindow(statusWindow);
     relayoutWindows();
-    if (buttonWindow && !buttonWindow.isDestroyed()) buttonWindow.show();
+    if (chatTriggerWindow && !chatTriggerWindow.isDestroyed()) chatTriggerWindow.show();
     sendToPet('set-mode', { view: activeMode });
   }
 }
@@ -713,12 +956,14 @@ function createWeekWindow() {
   if (weekWindow) return;
   const wa = anchorDisplay().workArea;
   weekWindow = new BrowserWindow({
-    width: wa.width - 16,
+    // The strip starts to the RIGHT of the AI chat and runs to the screen's
+    // right edge, leaving the top-left corner to the chat.
+    width: wa.width - ASSISTANT_W - 16,
     // Tall enough for each day column to show its whole plan (~a third of
     // the screen's height, like the calendar; past days cross everything out
     // so the columns need room to breathe).
     height: weekStripHeight(wa.height),
-    x: wa.x + 8,
+    x: wa.x + ASSISTANT_W + 8,
     y: wa.y + 8,
     frame: false,
     transparent: true,
@@ -873,11 +1118,21 @@ function openScreenshotOverlay() {
 
 // === Sleep / wake (Ctrl+Shift+S) ===
 // Hides the whole app chrome (the planner fades in the pet window; the status
-// bar and launcher window hide) so the screen is clean, and the same shortcut
+// bar and chat trigger hide) so the screen is clean, and the same shortcut
 // summons it back. Debounced so duplicate triggers (global shortcut + key
 // watcher + window fallback) toggle exactly once.
 let sleeping = false;
 let lastSleepToggle = 0;
+// Absorbs a stray Ctrl+Shift+S that lands right around the wake/continue
+// flow. Users habitually press the hotkey again while/just after clicking
+// through the Jarvis card (muscle memory from the old inverted-toggle app,
+// where a second press was a harmless no-op) — without this, that second
+// press would instantly re-hide the app, leaving only the status bar and
+// making it look like the planner never came up. Within this window the
+// hotkey is intentionally a no-op; the tray's Hide Planner (a deliberate
+// action) still works because it calls applySleep directly.
+const SLEEP_GRACE_MS = 2000;
+let sleepGraceUntil = 0;
 
 // Wake the app AND place it on the display under the cursor — Ctrl+Shift+S
 // and the tray's Show Planner both mean "summon it where I'm looking". This
@@ -886,16 +1141,35 @@ let lastSleepToggle = 0;
 // earlier change kept the old anchor because re-anchoring on EVERY press
 // (the inverted-toggle bug) made the app jump around uncontrollably — with
 // the toggle fixed, waking to the cursor is deliberate and predictable.
+//
+// Waking summons the planner DIRECTLY — the Jarvis startup card only plays
+// on app launch now. It used to replay on every wake, and the extra
+// click-through step was where the planner could appear missing: the pet's
+// show() raced the always-on-top boot window's close, and a Windows quirk
+// can drop a show() that lands mid-close, leaving only the status bar up.
 function wakeToCursorDisplay() {
   appDisplay = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
   dlog('wake — cursor display:', appDisplay.id, appDisplay.bounds);
-  applySleep(false);
+  // The wake press itself is consumed: swallowing it (and the boot-continue
+  // re-arm below) means a second press around the wake can't re-hide.
+  sleepGraceUntil = Date.now() + SLEEP_GRACE_MS;
+  applySleep(false); // restores the active mode's windows on the cursor display
   relayoutWindows();
+  ensureWindowsVisible(); // belt & braces against a dropped show()
   dlog('wake complete — anchor:', appDisplay.bounds, 'pet:', petWindow && !petWindow.isDestroyed() ? petWindow.getBounds() : null);
 }
 
 function toggleSleep() {
+  // During the Jarvis scan the hotkey is a no-op — it must not restart the
+  // boot sequence mid-scan.
+  if (booting) return;
   const now = Date.now();
+  // A stray press right after waking/clicking-through must not instantly
+  // hide the freshly summoned planner.
+  if (now < sleepGraceUntil) {
+    dlog('toggleSleep absorbed by wake grace (', (sleepGraceUntil - now) + 'ms left)');
+    return;
+  }
   if (now - lastSleepToggle < 400) return;
   lastSleepToggle = now;
   // Awake → hide; asleep → wake (and place at the cursor's display). The
@@ -911,24 +1185,34 @@ function applySleep(value) {
   dlog('sleep:', sleeping, 'pet bounds:', petWindow && !petWindow.isDestroyed() ? petWindow.getBounds() : null);
   // Wake: bring the pet window back BEFORE fading it in, so the CSS
   // transition is actually visible (a hidden window can't animate).
-  if (!value && !peekActive && !focusSessionActive && petWindow && !petWindow.isDestroyed() && !petWindow.isVisible()) {
+  if (!value && !booting && !peekActive && !focusSessionActive && petWindow && !petWindow.isDestroyed() && !petWindow.isVisible()) {
     petWindow.show();
   }
   sendToPet('set-sleeping', { value: sleeping });
   if (sleeping) {
     if (statusWindow && !statusWindow.isDestroyed()) statusWindow.hide();
-    if (buttonWindow && !buttonWindow.isDestroyed()) buttonWindow.hide();
+    if (chatTriggerWindow && !chatTriggerWindow.isDestroyed()) chatTriggerWindow.hide();
     if (focusBarWindow && !focusBarWindow.isDestroyed()) focusBarWindow.hide();
     if (weekWindow && !weekWindow.isDestroyed() && weekWindow.isVisible()) weekWindow.hide();
     // Hide (not close) an open notes popup so it comes back in the same spot
     // with its content intact when the app is summoned again.
     if (notesWindow && !notesWindow.isDestroyed() && notesWindow.isVisible()) {
       notesHiddenBySleep = true;
-      notesWindow.hide();
+      hideCardWindow(notesWindow);
     }
     if (assistantWindow && !assistantWindow.isDestroyed() && assistantWindow.isVisible()) {
       assistantHiddenBySleep = true;
-      assistantWindow.hide();
+      hideCardWindow(assistantWindow);
+    }
+    // Hide (not close) an open stats card so it comes back in the same spot
+    // with the same data when the app is summoned again.
+    if (statsWindow && !statsWindow.isDestroyed() && statsWindow.isVisible()) {
+      statsHiddenBySleep = true;
+      hideCardWindow(statsWindow);
+    }
+    if (infoWindow && !infoWindow.isDestroyed() && infoWindow.isVisible()) {
+      infoHiddenBySleep = true;
+      hideCardWindow(infoWindow);
     }
     if (deadlineAlertWindow && !deadlineAlertWindow.isDestroyed() && deadlineAlertWindow.isVisible()) closeDeadlineAlert();
     closeScreenshotOverlay(); // don't leave the capture overlay up over a hidden app
@@ -948,12 +1232,22 @@ function applySleep(value) {
     if (notesHiddenBySleep) {
       notesHiddenBySleep = false;
       if (!notesWindow || notesWindow.isDestroyed()) createNotesWindow();
-      if (notesWindow && !notesWindow.isDestroyed()) { notesWindow.show(); notesWindow.focus(); }
+      if (notesWindow && !notesWindow.isDestroyed()) { showCardWindow(notesWindow); notesWindow.focus(); }
     }
     if (assistantHiddenBySleep) {
       assistantHiddenBySleep = false;
       if (!assistantWindow || assistantWindow.isDestroyed()) createAssistantWindow();
-      if (assistantWindow && !assistantWindow.isDestroyed()) { assistantWindow.show(); assistantWindow.focus(); }
+      if (assistantWindow && !assistantWindow.isDestroyed()) { showCardWindow(assistantWindow); assistantWindow.focus(); }
+    }
+    if (statsHiddenBySleep) {
+      statsHiddenBySleep = false;
+      if (!statsWindow || statsWindow.isDestroyed()) createStatsWindow();
+      if (statsWindow && !statsWindow.isDestroyed()) { showCardWindow(statsWindow); statsWindow.focus(); }
+    }
+    if (infoHiddenBySleep) {
+      infoHiddenBySleep = false;
+      if (!infoWindow || infoWindow.isDestroyed()) createInfoWindow();
+      if (infoWindow && !infoWindow.isDestroyed()) { showCardWindow(infoWindow); infoWindow.focus(); }
     }
   }
   buildTrayMenu(); // keep the tray's Show/Hide item in sync
@@ -972,12 +1266,20 @@ function setPeek(active) {
   if (peekActive) {
     setMouseIgnored(true);
     if (statusWindow && !statusWindow.isDestroyed()) statusWindow.hide();
-    if (buttonWindow && !buttonWindow.isDestroyed()) buttonWindow.hide();
+    if (chatTriggerWindow && !chatTriggerWindow.isDestroyed()) chatTriggerWindow.hide();
     if (weekWindow && !weekWindow.isDestroyed() && weekWindow.isVisible()) weekWindow.hide();
     if (focusBarWindow && !focusBarWindow.isDestroyed()) focusBarWindow.hide();
     if (assistantWindow && !assistantWindow.isDestroyed() && assistantWindow.isVisible()) {
       assistantHiddenBySleep = true;
-      assistantWindow.hide();
+      hideCardWindow(assistantWindow);
+    }
+    if (statsWindow && !statsWindow.isDestroyed() && statsWindow.isVisible()) {
+      statsHiddenBySleep = true;
+      hideCardWindow(statsWindow);
+    }
+    if (infoWindow && !infoWindow.isDestroyed() && infoWindow.isVisible()) {
+      infoHiddenBySleep = true;
+      hideCardWindow(infoWindow);
     }
     hideHoverCard();
   } else if (!sleeping) {
@@ -986,12 +1288,22 @@ function setPeek(active) {
     if (notesHiddenBySleep) {
       notesHiddenBySleep = false;
       if (!notesWindow || notesWindow.isDestroyed()) createNotesWindow();
-      if (notesWindow && !notesWindow.isDestroyed()) { notesWindow.show(); notesWindow.focus(); }
+      if (notesWindow && !notesWindow.isDestroyed()) { showCardWindow(notesWindow); notesWindow.focus(); }
     }
     if (assistantHiddenBySleep) {
       assistantHiddenBySleep = false;
       if (!assistantWindow || assistantWindow.isDestroyed()) createAssistantWindow();
-      if (assistantWindow && !assistantWindow.isDestroyed()) { assistantWindow.show(); assistantWindow.focus(); }
+      if (assistantWindow && !assistantWindow.isDestroyed()) { showCardWindow(assistantWindow); assistantWindow.focus(); }
+    }
+    if (statsHiddenBySleep) {
+      statsHiddenBySleep = false;
+      if (!statsWindow || statsWindow.isDestroyed()) createStatsWindow();
+      if (statsWindow && !statsWindow.isDestroyed()) { showCardWindow(statsWindow); statsWindow.focus(); }
+    }
+    if (infoHiddenBySleep) {
+      infoHiddenBySleep = false;
+      if (!infoWindow || infoWindow.isDestroyed()) createInfoWindow();
+      if (infoWindow && !infoWindow.isDestroyed()) { showCardWindow(infoWindow); infoWindow.focus(); }
     }
   }
 }
@@ -1006,16 +1318,20 @@ function setPeek(active) {
 let shiftSKeyWatcher = null;
 let altCKeyWatcher = null;
 
-function startKeyWatcher(label, keys, onPress, onRelease, onExit) {
+function startKeyWatcher(label, keys, onPress, onRelease, onExit, exclude) {
   if (process.platform !== 'win32') return null;
-  // All listed keys must be down (e.g. Ctrl+Shift+S = [17, 16, 83]).
+  // All listed keys must be down (e.g. Ctrl+Shift+S = [17, 16, 83]); any
+  // excluded key must be UP so a longer combo (Ctrl+Shift+Alt+S) never trips
+  // a shorter one (Ctrl+Shift+S) at the same time.
   const comboCheck = keys.map(k => `([K]::GetAsyncKeyState(${k}) -lt 0)`).join(' -and ');
+  const excl = (exclude || []).map(k => `([K]::GetAsyncKeyState(${k}) -ge 0)`).join(' -and ');
+  const check = excl ? `(${comboCheck}) -and (${excl})` : comboCheck;
   const script = [
     '[Console]::OutputEncoding=[Text.Encoding]::ASCII;',
     'Add-Type -TypeDefinition \'using System;using System.Runtime.InteropServices;public class K{[DllImport("user32.dll")]public static extern short GetAsyncKeyState(int v);}\';',
     '$prev=$false;',
     'while($true){',
-    `  $d = ${comboCheck};`,
+    `  $d = ${check};`,
     `  if($d -and -not $prev){[Console]::WriteLine('1'); [Console]::Out.Flush()};`,
     `  if($prev -and -not $d){[Console]::WriteLine('0'); [Console]::Out.Flush()};`,
     '  $prev=$d;',
@@ -1069,7 +1385,7 @@ function startKeyWatcher(label, keys, onPress, onRelease, onExit) {
 // duplicate with the global shortcut.
 let cycleKeyWatcher = null;
 function startShiftSKeyWatcher() {
-  if (!shiftSKeyWatcher) shiftSKeyWatcher = startKeyWatcher('Ctrl+Shift+S', [17, 16, 83], () => toggleSleep(), () => {});
+  if (!shiftSKeyWatcher) shiftSKeyWatcher = startKeyWatcher('Ctrl+Shift+S', [17, 16, 83], () => toggleSleep(), () => {}, null, [18]);
 }
 function startAltCWatcher() {
   if (!altCKeyWatcher) altCKeyWatcher = startKeyWatcher('Alt+C', [18, 67], () => setPeek(true), () => setPeek(false), () => setPeek(false));
@@ -1117,21 +1433,6 @@ ipcMain.on('update-interactive-bounds', (event, bounds) => {
   }
 });
 
-// Open an app panel from the floating launcher button window. The three view
-// modes are handled here (only one is on screen at a time); everything else
-// (info/clipboard/notes/settings) is forwarded to the sidebar renderer.
-ipcMain.on('open-panel', (_e, action) => {
-  if (action === 'tasks' || action === 'calendar' || action === 'week') {
-    setAppMode(action);
-    return;
-  }
-  if (action === 'assistant') {
-    toggleAssistantWindow(); // the assistant is its own window now
-    return;
-  }
-  if (action && typeof action === 'string') sendToPet('open-panel', { action });
-});
-
 // Assistant chat: the window sends raw text here; the pet renderer (which
 // owns the task/deadline/clipboard data) answers and the reply is routed
 // back to the window.
@@ -1144,6 +1445,108 @@ ipcMain.on('assistant-reply', (_e, reply) => {
 });
 ipcMain.on('open-assistant', () => toggleAssistantWindow());
 ipcMain.on('assistant-close', () => closeAssistantWindow());
+ipcMain.on('open-stats', () => toggleStatsWindow());
+ipcMain.on('stats-close', () => closeStatsWindow());
+ipcMain.on('open-info', () => toggleInfoWindow());
+ipcMain.on('info-close', () => closeInfoWindow());
+ipcMain.on('full-view', () => openFullView());
+// Live stats sync: the planner renderer (data owner) pushes a snapshot here
+// whenever tasks/deadlines/streak/focus change; forward it to the stats window.
+ipcMain.on('stats-update', (_e, payload) => {
+  if (statsWindow && !statsWindow.isDestroyed() && !statsWindow.webContents.isLoading()) {
+    statsWindow.webContents.send('stats-data', payload);
+  }
+  if (bootWindow && !bootWindow.isDestroyed() && !bootWindow.webContents.isLoading()) {
+    bootWindow.webContents.send('stats-data', payload);
+  }
+});
+// The stats window just opened and wants the current snapshot now.
+ipcMain.on('stats-request', () => sendToPet('stats-request', {}));
+// Online/offline mode: the window toggles it, the pet renderer owns/stores it
+// and broadcasts the canonical value back to the window.
+ipcMain.on('assistant-set-mode', (_e, mode) => { sendToPet('assistant-set-mode', { mode }); });
+ipcMain.on('assistant-mode-state', (_e, mode) => {
+  if (assistantWindow && !assistantWindow.isDestroyed()) assistantWindow.webContents.send('assistant-mode-state', mode);
+});
+// Daily-protocol accent: the planner renderer owns the choice and broadcasts
+// it so assistant/notes/info/stats/week all match its color scheme.
+function broadcastToPanels(channel, payload) {
+  [assistantWindow, notesWindow, infoWindow, statsWindow, weekWindow].forEach((w) => {
+    if (w && !w.isDestroyed()) w.webContents.send(channel, payload);
+  });
+}
+ipcMain.on('protocol-state', (_e, protocol) => broadcastToPanels('protocol-state', protocol));
+ipcMain.on('protocol-get', () => sendToPet('protocol-get', {}));
+// The user clicked through the startup screen: close it and tell the planner
+// to continue (show the daily protocol picker if it hasn't been chosen).
+// The windows are restored only AFTER the boot window has fully closed — a
+// pet.show() that lands while the always-on-top boot window is mid-close can
+// be dropped on Windows (the status bar, at screen-saver always-on-top,
+// comes back but the planner stays invisible). A fallback timer covers a
+// boot window that never finishes closing.
+ipcMain.on('boot-continue', () => {
+  booting = false;
+  // Re-arm the grace so a second Ctrl+Shift+S right after clicking through
+  // the Jarvis card can't hide the planner that just came up.
+  sleepGraceUntil = Date.now() + SLEEP_GRACE_MS;
+  let finished = false;
+  const finishBoot = () => {
+    if (finished) return;
+    finished = true;
+    clearTimeout(bootCloseFallback);
+    restoreModeWindows(); // bring the planner / status / chat back
+    sendToPet('boot-done', {});
+    ensureWindowsVisible(); // verify the chrome actually landed on screen
+  };
+  const bootCloseFallback = setTimeout(finishBoot, 600);
+  if (bootWindow && !bootWindow.isDestroyed()) {
+    bootWindow.once('closed', finishBoot);
+    bootWindow.close();
+  } else {
+    finishBoot();
+  }
+});
+
+// A Windows quirk can drop a show() that lands while another always-on-top
+// window is mid-close (the boot card), leaving the status bar up but the
+// planner missing. After a boot handoff or wake, verify the chrome is
+// actually visible and re-show anything that didn't make it.
+function ensureWindowsVisible() {
+  [150, 450, 1200].forEach((ms) => setTimeout(() => {
+    if (!petWindow || petWindow.isDestroyed()) return;
+    if (booting || sleeping || peekActive || focusSessionActive || activeMode === 'week') return;
+    if (!petWindow.isVisible()) {
+      dlog('pet window missing after wake/boot — re-showing');
+      petWindow.show();
+      relayoutWindows();
+    }
+    if (statusWindow && !statusWindow.isDestroyed() && !statusWindow.isVisible()) {
+      dlog('status window missing after wake/boot — re-showing');
+      showCardWindow(statusWindow);
+    }
+    if (chatTriggerWindow && !chatTriggerWindow.isDestroyed() && !chatTriggerWindow.isVisible()) {
+      dlog('chat trigger missing after wake/boot — re-showing');
+      chatTriggerWindow.show();
+    }
+  }, ms));
+}
+
+// Export tasks/deadlines/notes/settings to a JSON file (save dialog).
+ipcMain.handle('export-data', async (_e, json) => {
+  try {
+    const res = await dialog.showSaveDialog({
+      title: 'Export Wolf data',
+      defaultPath: 'wolf-data-' + new Date().toISOString().slice(0, 10) + '.json',
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+    });
+    if (res.canceled || !res.filePath) return false;
+    await fs.promises.writeFile(res.filePath, String(json), 'utf8');
+    return true;
+  } catch (e) {
+    dlog('export failed:', e && e.message);
+    return false;
+  }
+});
 
 // App view mode (sent by the sidebar's view switcher and the week strip's
 // header buttons).
@@ -1161,13 +1564,12 @@ ipcMain.on('week-update-bounds', (_e, bounds) => {
 // the clicked day is in a different month).
 ipcMain.on('week-select-day', (_e, key) => {
   activeMode = 'calendar';
-  if (weekWindow && !weekWindow.isDestroyed() && weekWindow.isVisible()) weekWindow.hide();
+  if (weekWindow && !weekWindow.isDestroyed() && weekWindow.isVisible()) hideCardWindow(weekWindow);
   if (petWindow && !petWindow.isDestroyed()) petWindow.show();
-  if (statusWindow && !statusWindow.isDestroyed()) statusWindow.show();
-  // Back to the sidebar layout — return the launcher to its usual corner
-  // and bring an open notes card back beside the sidebar.
+  if (statusWindow && !statusWindow.isDestroyed()) showCardWindow(statusWindow);
+  // Back to the sidebar layout — bring an open notes card back beside the
+  // sidebar.
   relayoutWindows();
-  if (buttonWindow && !buttonWindow.isDestroyed()) buttonWindow.show();
   if (key && typeof key === 'string') sendToPet('select-day', { key });
 });
 
@@ -1193,25 +1595,55 @@ ipcMain.on('focus-session', (_e, state) => {
       if (petWindow && !petWindow.isDestroyed()) petWindow.hide();
       if (statusWindow && !statusWindow.isDestroyed()) statusWindow.hide();
       if (weekWindow && !weekWindow.isDestroyed() && weekWindow.isVisible()) weekWindow.hide();
-      if (buttonWindow && !buttonWindow.isDestroyed()) buttonWindow.hide();
+      if (chatTriggerWindow && !chatTriggerWindow.isDestroyed()) chatTriggerWindow.hide();
       if (notesWindow && !notesWindow.isDestroyed() && notesWindow.isVisible()) {
         notesHiddenByFocus = true;
-        notesWindow.hide();
+        hideCardWindow(notesWindow);
+      }
+      if (assistantWindow && !assistantWindow.isDestroyed() && assistantWindow.isVisible()) {
+        assistantHiddenBySleep = true;
+        hideCardWindow(assistantWindow);
+      }
+      if (statsWindow && !statsWindow.isDestroyed() && statsWindow.isVisible()) {
+        statsHiddenBySleep = true;
+        hideCardWindow(statsWindow);
+      }
+      if (infoWindow && !infoWindow.isDestroyed() && infoWindow.isVisible()) {
+        infoHiddenBySleep = true;
+        hideCardWindow(infoWindow);
       }
     }
     createFocusBarWindow();
     if (focusBarWindow && !focusBarWindow.isDestroyed()) {
       focusBarWindow.webContents.send('focus-bar-state', state);
-      focusBarWindow.show();
+      // Only animate the window in ONCE — the countdown updates every second
+      // and re-running the summon animation on each tick made the bar flash
+      // in/out repeatedly. Once it's up, just keep pushing the new time.
+      if (!focusBarWindow.isVisible()) showCardWindow(focusBarWindow);
     }
   } else {
-    if (focusBarWindow && !focusBarWindow.isDestroyed()) focusBarWindow.hide();
+    if (focusBarWindow && !focusBarWindow.isDestroyed()) hideCardWindow(focusBarWindow);
     if (!sleeping && !peekActive) {
       restoreModeWindows();
       if (notesHiddenByFocus) {
         notesHiddenByFocus = false;
         if (!notesWindow || notesWindow.isDestroyed()) createNotesWindow();
-        if (notesWindow && !notesWindow.isDestroyed()) { notesWindow.show(); notesWindow.focus(); }
+        if (notesWindow && !notesWindow.isDestroyed()) { showCardWindow(notesWindow); notesWindow.focus(); }
+      }
+      if (assistantHiddenBySleep) {
+        assistantHiddenBySleep = false;
+        if (!assistantWindow || assistantWindow.isDestroyed()) createAssistantWindow();
+        if (assistantWindow && !assistantWindow.isDestroyed()) { showCardWindow(assistantWindow); assistantWindow.focus(); }
+      }
+      if (statsHiddenBySleep) {
+        statsHiddenBySleep = false;
+        if (!statsWindow || statsWindow.isDestroyed()) createStatsWindow();
+        if (statsWindow && !statsWindow.isDestroyed()) { showCardWindow(statsWindow); statsWindow.focus(); }
+      }
+      if (infoHiddenBySleep) {
+        infoHiddenBySleep = false;
+        if (!infoWindow || infoWindow.isDestroyed()) createInfoWindow();
+        if (infoWindow && !infoWindow.isDestroyed()) { showCardWindow(infoWindow); infoWindow.focus(); }
       }
     }
   }
@@ -1230,6 +1662,15 @@ ipcMain.on('hover-card-hide', () => hideHoverCard());
 // Sleep / wake (Ctrl+Shift+S — sent by the renderer's keydown fallback)
 ipcMain.on('toggle-sleep', () => toggleSleep());
 
+// A card window finished its fade-out and is ready to be hidden.
+ipcMain.on('summon-leave-done', (e) => {
+  const win = pendingCardHide.get(e.sender.id);
+  if (!win) return;
+  pendingCardHide.delete(e.sender.id);
+  if (win._hideFallback) { clearTimeout(win._hideFallback); win._hideFallback = null; }
+  if (win && !win.isDestroyed()) win.hide();
+});
+
 // Full-screen deadline alert
 ipcMain.on('deadline-alert-show', (_e, dl) => {
   if (dl && dl.id && dl.name) showDeadlineAlert(dl);
@@ -1240,6 +1681,8 @@ ipcMain.on('deadline-alert-ack', (_e, id) => {
   closeDeadlineAlert();
   sendToPet('deadline-alert-acked', { id });
 });
+// Conflict alert: "remove the new one" → delete that deadline.
+ipcMain.on('conflict-resolve', (_e, id) => { sendToPet('conflict-resolve', { id }); });
 
 // Screenshot overlay (triggered from the ring menu's Screenshot action)
 ipcMain.on('open-screenshot-overlay', () => openScreenshotOverlay());
@@ -1247,14 +1690,18 @@ ipcMain.on('open-screenshot-overlay', () => openScreenshotOverlay());
 ipcMain.on('capture-screenshot-close', async (event, region) => {
   // Hide the overlay + app chrome BEFORE grabbing the screen — otherwise the
   // shot would include the overlay's dim/grid, the pet sidebar itself, and
-  // the floating launcher button.
+  // the chat trigger.
   if (screenshotOverlay && !screenshotOverlay.isDestroyed()) screenshotOverlay.hide();
   const petWasVisible = petWindow && !petWindow.isDestroyed() && petWindow.isVisible();
   if (petWasVisible) petWindow.hide();
   if (statusWindow && !statusWindow.isDestroyed()) statusWindow.hide();
   if (notesWindow && !notesWindow.isDestroyed()) { notesHideForCapture = true; notesWindow.hide(); }
   if (deadlineAlertWindow && !deadlineAlertWindow.isDestroyed()) deadlineAlertWindow.hide();
-  if (buttonWindow && !buttonWindow.isDestroyed()) buttonWindow.hide();
+  if (chatTriggerWindow && !chatTriggerWindow.isDestroyed()) chatTriggerWindow.hide();
+  const statsWasVisible = statsWindow && !statsWindow.isDestroyed() && statsWindow.isVisible();
+  if (statsWasVisible) statsWindow.hide();
+  const infoWasVisible = infoWindow && !infoWindow.isDestroyed() && infoWindow.isVisible();
+  if (infoWasVisible) infoWindow.hide();
   if (weekWindow && !weekWindow.isDestroyed() && weekWindow.isVisible()) weekWindow.hide();
   if (focusBarWindow && !focusBarWindow.isDestroyed()) focusBarWindow.hide();
   let captured = false;
@@ -1269,10 +1716,13 @@ ipcMain.on('capture-screenshot-close', async (event, region) => {
       if (weekWindow && !weekWindow.isDestroyed()) weekWindow.show();
     } else {
       if (petWasVisible && petWindow && !petWindow.isDestroyed()) petWindow.show();
-      if (statusWindow && !statusWindow.isDestroyed()) statusWindow.show();
-      if (buttonWindow && !buttonWindow.isDestroyed()) buttonWindow.show();
+      if (statusWindow && !statusWindow.isDestroyed()) showCardWindow(statusWindow);
     }
+
+    if (chatTriggerWindow && !chatTriggerWindow.isDestroyed()) chatTriggerWindow.show();
     if (notesWindow && !notesWindow.isDestroyed()) notesWindow.show();
+    if (statsWasVisible && statsWindow && !statsWindow.isDestroyed()) statsWindow.show();
+    if (infoWasVisible && infoWindow && !infoWindow.isDestroyed()) infoWindow.show();
     notesHideForCapture = false;
     if (focusSessionActive && focusBarWindow && !focusBarWindow.isDestroyed()) focusBarWindow.show();
     if (deadlineAlertWindow && !deadlineAlertWindow.isDestroyed()) deadlineAlertWindow.show();
@@ -1513,9 +1963,9 @@ function stopPolling() {
     clearInterval(cursorPollInterval);
     cursorPollInterval = null;
   }
-  if (buttonPollInterval) {
-    clearInterval(buttonPollInterval);
-    buttonPollInterval = null;
+  if (chatTriggerPoll) {
+    clearInterval(chatTriggerPoll);
+    chatTriggerPoll = null;
   }
   if (weekPollInterval) {
     clearInterval(weekPollInterval);
@@ -1596,9 +2046,9 @@ function summonToDisplay(index, display) {
     buildTrayMenu();
     return;
   }
-  // Route through the mode system so the week strip can't linger alongside
-  // the sidebar (one mode at a time).
-  setAppMode(activeMode === 'week' ? 'tasks' : activeMode);
+  // Re-apply the CURRENT mode so the week strip (or sidebar) re-lays out on
+  // the new screen without switching views out from under the user.
+  setAppMode(activeMode);
   if (petWindow && !petWindow.isDestroyed()) petWindow.focus();
   dlog('summon complete — anchor:', appDisplay.bounds, 'pet:', petWindow && !petWindow.isDestroyed() ? petWindow.getBounds() : null);
   buildTrayMenu(); // move the checkmark to the new anchor
@@ -1715,30 +2165,38 @@ function relayoutWindows() {
       height: 46,
     });
   }
-  if (buttonWindow && !buttonWindow.isDestroyed()) {
-    const p = buttonPlacement(wa);
-    buttonWindow.setBounds({ x: p.x, y: p.y, width: BTN_SIZE, height: BTN_SIZE });
+  if (chatTriggerWindow && !chatTriggerWindow.isDestroyed()) {
+    chatTriggerWindow.setBounds({ x: wa.x + 4, y: chatTriggerY(wa), width: CHAT_TRIGGER_SIZE, height: CHAT_TRIGGER_SIZE });
+  }
+  if (assistantWindow && !assistantWindow.isDestroyed()) {
+    assistantWindow.setBounds({ x: wa.x, y: assistantY(wa), width: ASSISTANT_W, height: assistantHeight(wa) });
+  }
+  if (statsWindow && !statsWindow.isDestroyed()) {
+    statsWindow.setBounds({
+      x: statsX(wa),
+      y: statsY(wa),
+      width: statsWidth(wa),
+      height: statsHeight(wa),
+    });
   }
   if (notesWindow && !notesWindow.isDestroyed()) {
-    // Keep the user's resized width/height (clamped to the work area) and
-    // re-anchor the card to its spot beside the sidebar (or below the week
-    // strip in Week view), never pushed past the bottom of the screen.
+    // Re-anchor the card to its slot in the middle column. In normal view the
+    // user's resized width/height is kept (clamped); in Week view Notes and
+    // Info share a row, so the card snaps to the computed compact size.
     const b = notesWindow.getBounds();
-    const w = Math.min(Math.max(260, b.width), wa.width - 8);
-    const h = Math.min(Math.max(300, b.height), wa.height - SIDEBAR_TOP - 4);
+    const w = activeMode === 'week' ? notesW(wa) : Math.min(Math.max(260, b.width), notesW(wa));
+    const h = activeMode === 'week' ? notesH(wa) : Math.min(Math.max(280, b.height), notesH(wa));
     const y = Math.min(notesY(wa), wa.y + wa.height - h - 8);
-    notesWindow.setBounds({
-      x: Math.max(wa.x, wa.x + wa.width - SIDEBAR_W - 8 - w - 12),
-      y: y,
-      width: w,
-      height: h,
-    });
+    notesWindow.setBounds({ x: notesX(wa), y: y, width: w, height: h });
+  }
+  if (infoWindow && !infoWindow.isDestroyed()) {
+    infoWindow.setBounds({ x: infoX(wa), y: infoY(wa), width: infoW(wa), height: infoH(wa) });
   }
   if (weekWindow && !weekWindow.isDestroyed()) {
     weekWindow.setBounds({
-      x: wa.x + 8,
+      x: wa.x + ASSISTANT_W + 8,
       y: wa.y + 8,
-      width: wa.width - 16,
+      width: wa.width - ASSISTANT_W - 16,
       height: weekStripHeight(wa.height),
     });
   }
@@ -1754,7 +2212,7 @@ function relayoutWindows() {
       x: wa.x + wa.width - SIDEBAR_W - 8,
       y: wa.y + 60,
       width: SIDEBAR_W,
-      height: 64,
+      height: 76,
     });
   }
   if (hoverCardWindow && !hoverCardWindow.isDestroyed() && hoverCardWindow.isVisible()) {
@@ -1828,6 +2286,9 @@ function startLayoutWatchdog() {
   if (layoutWatchdog) return;
   layoutWatchdog = setInterval(() => {
     if (!petWindow || petWindow.isDestroyed()) return;
+    // During the startup card the planner/status/chat are hidden ON PURPOSE —
+    // the self-heal below must NOT pop them back up over the boot screen.
+    if (booting) return;
     // Follow the window if Windows moved it to another display…
     followPetWindowDisplay();
     // …otherwise confirm the layout still matches the anchor and re-apply if
@@ -1852,7 +2313,7 @@ function startLayoutWatchdog() {
     // awake and not in a focus session, every chrome window must be on
     // screen — otherwise the app looks broken after sleep/wake cycles.
     if (sleeping || peekActive) {
-      if (buttonWindow && !buttonWindow.isDestroyed() && buttonWindow.isVisible()) buttonWindow.hide();
+      if (chatTriggerWindow && !chatTriggerWindow.isDestroyed() && chatTriggerWindow.isVisible()) chatTriggerWindow.hide();
       if (statusWindow && !statusWindow.isDestroyed() && statusWindow.isVisible()) statusWindow.hide();
       if (sleeping && petWindow && !petWindow.isDestroyed() && petWindow.isVisible()) petWindow.hide();
     } else if (!focusSessionActive) {
@@ -1860,8 +2321,6 @@ function startLayoutWatchdog() {
       // owns the screen) — the self-heal must not pop them back up over it.
       // Conversely, if a stray pet/status is still up in week mode (a wake
       // landing mid-transition), hide it — the strip owns the screen.
-      // The launcher button IS shown in week mode (bottom-right), so its
-      // restore below runs unconditionally.
       if (activeMode === 'week') {
         if (petWindow && !petWindow.isDestroyed() && petWindow.isVisible()) petWindow.hide();
         if (statusWindow && !statusWindow.isDestroyed() && statusWindow.isVisible()) statusWindow.hide();
@@ -1877,19 +2336,18 @@ function startLayoutWatchdog() {
           relayoutWindows();
         } else if (!statusWindow.isVisible()) {
           dlog('status window missing — restoring');
-          statusWindow.show();
+          showCardWindow(statusWindow);
           relayoutWindows();
         }
       }
-      // The launcher button must always be on screen unless the app is asleep,
-      // peeking, or unsummoned by a focus session (week mode shows it too,
-      // parked bottom-right). Self-heal if it went missing (a hide that never
-      // got restored, or a stale placement that left it off-screen).
-      if (buttonWindow && !buttonWindow.isDestroyed() &&
-          (!buttonWindow.isVisible() || !isOnScreen(buttonWindow.getBounds()))) {
-        dlog('launcher button missing — restoring');
-        positionButtonWindow();
-        buttonWindow.show();
+      // The chat trigger stays pinned to the top-left corner in every mode;
+      // self-heal it if it ever goes missing.
+      if (!chatTriggerWindow || chatTriggerWindow.isDestroyed()) {
+        dlog('chat trigger missing — recreating');
+        createChatTriggerWindow();
+        relayoutWindows();
+      } else if (!chatTriggerWindow.isVisible()) {
+        chatTriggerWindow.show();
       }
     }
   }, 3000);
@@ -1934,7 +2392,7 @@ if (!app.requestSingleInstanceLock()) {
     clipboardHistory = loadClipboardHistory();
     createPetWindow();
     createStatusWindow();
-    createButtonWindow();
+    createChatTriggerWindow();
     createScreenshotOverlay(anchorDisplay());
     startClipboardWatcher();
     createTray();
@@ -1942,6 +2400,7 @@ if (!app.requestSingleInstanceLock()) {
     // between the windows being built) and keep it in sync with any display
     // configuration change while the app runs.
     relayoutWindows();
+    showBootWindow();
     watchDisplayChanges();
     startLayoutWatchdog();
     // System-wide Ctrl+Shift+S = sleep/wake (hide the app from the screen,
@@ -1954,6 +2413,9 @@ if (!app.requestSingleInstanceLock()) {
     // screen-switch path, independent of the tray menu).
     const cycleOk = globalShortcut.register('CommandOrControl+Shift+Alt+S', cycleToNextDisplay);
     dlog('global shortcut Ctrl+Shift+Alt+S:', cycleOk ? 'registered' : 'FAILED — falling back to key watcher');
+    // Ctrl+Shift+A = summon the assistant chat from anywhere.
+    const asstOk = globalShortcut.register('CommandOrControl+Shift+A', () => toggleAssistantWindow());
+    dlog('global shortcut Ctrl+Shift+A:', asstOk ? 'registered' : 'FAILED');
     // Belt & braces on Windows: PowerShell key watchers poll the raw key state
     // (Ctrl+Shift+S sleep/wake + Alt+C peek + Ctrl+Shift+Alt+S next screen),
     // so they still fire if another app owns the hotkey or the OS-level
@@ -1977,8 +2439,8 @@ app.on('will-quit', () => {
   saveClipboardHistory();
   if (screenshotOverlay) { screenshotOverlay.close(); screenshotOverlay = null; }
   if (notesWindow) { notesWindow.close(); notesWindow = null; }
+  if (infoWindow) { infoWindow.close(); infoWindow = null; }
   if (deadlineAlertWindow) { deadlineAlertWindow.close(); deadlineAlertWindow = null; }
-  if (buttonWindow) { buttonWindow.close(); buttonWindow = null; }
   if (weekWindow) { weekWindow.close(); weekWindow = null; }
   if (focusBarWindow) { focusBarWindow.close(); focusBarWindow = null; }
   if (hoverCardWindow) { hoverCardWindow.close(); hoverCardWindow = null; }

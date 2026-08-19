@@ -318,58 +318,21 @@
     letter-spacing: 0.02em;
     white-space: nowrap;
   }
-  /* The screenshot placeholder itself */
+  /* The screenshot itself (real app preview) */
   .shot {
     position: relative;
-    height: clamp(300px, 46vw, 460px);
+    height: clamp(320px, 48vw, 560px);
     background: rgba(9, 14, 27, 0.5);
     display: grid;
     place-items: center;
     overflow: hidden;
   }
-  /* faint skeleton rows inside the placeholder to hint at the planner */
-  .shot::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background-image:
-      repeating-linear-gradient(180deg,
-        transparent 0 18px,
-        rgba(255, 255, 255, 0.045) 18px 19px);
-    -webkit-mask-image: linear-gradient(180deg, transparent, #000 40%, transparent 92%);
-    mask-image: linear-gradient(180deg, transparent, #000 40%, transparent 92%);
-  }
-  .shot-label {
-    position: relative;
-    text-align: center;
-    padding: 26px 34px;
-    border-radius: 18px;
-    background: var(--glass-strong);
-    border: 1px dashed var(--hairline-bright);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-  }
-  .shot-label .cam {
-    font-size: 30px;
+  .shot-img {
     display: block;
-    margin-bottom: 8px;
-    filter: drop-shadow(0 0 14px rgba(139, 92, 246, 0.6));
-  }
-  .shot-label b { font-size: 15px; font-weight: 700; display: block; }
-  .shot-label span { font-size: 12.5px; color: var(--text-dim); }
-  /* soft shimmer sweeping the placeholder */
-  .shot::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: transparent;
-    background-size: 220% 220%;
-    background-position: 130% 50%;
-    animation: sweep 6s ease-in-out infinite;
-  }
-  @keyframes sweep {
-    0%, 100% { background-position: 130% 50%; }
-    50% { background-position: -30% 50%; }
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    object-position: center top;
   }
 
   /* === Features === */
@@ -532,18 +495,14 @@
 
     <!-- Preview -->
     <section class="preview" id="preview">
-      <div class="window" role="img" aria-label="App preview screenshot placeholder">
+      <div class="window">
         <div class="win-bar">
           <div class="win-dots" aria-hidden="true"><i></i><i></i><i></i></div>
-          <span class="win-title">Task Companion — preview</span>
+          <span class="win-title">Task Companion — planner preview</span>
           <div class="win-dots" aria-hidden="true" style="visibility:hidden"><i></i><i></i><i></i></div>
         </div>
         <div class="shot">
-          <div class="shot-label">
-            <span class="cam" aria-hidden="true">📸</span>
-            <b>Screenshot placeholder</b>
-            <span>App preview coming soon</span>
-          </div>
+          <img class="shot-img" src="landing-preview-desktop.png" alt="Task Companion planner showing daily tasks, deadlines and a month calendar" width="1440" height="900" loading="lazy">
         </div>
       </div>
     </section>

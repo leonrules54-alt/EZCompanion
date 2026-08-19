@@ -9,6 +9,7 @@ const assistantPanel = document.getElementById('assistant-panel');
 const notesPanel = document.getElementById('notes-panel');
 const tasksPanel = document.getElementById('tasks-panel');
 const categoriesPanel = document.getElementById('categories-panel');
+const classesPanel = document.getElementById('classes-panel');
 const focusPanel = document.getElementById('focus-panel');
 
 // Popup elements
@@ -25,6 +26,10 @@ let notes = loadNotes();
 let tasks = loadTasks();       // [{id, name, due, durationMin, done, completedAt, category}]
 let deadlines = loadDeadlines(); // [{id, name, due, time, done, completedAt}]
 let categories = loadCategories(); // [{id, name, color}]
+// The assistant's knowledge base: remembered classes (name + days + time, so
+// "history homework" resolves against the user's History class) and facts.
+const MEMORY_KEY = 'wolf-memory'; // declared BEFORE loadMemory() below (TDZ)
+let assistantMemory = loadMemory(); // { classes: [{id, name, days, time}], facts: [{id, text, at}] }
 // daily-tasks filter window (0 = today, 3, 7 days) — persisted
 let taskFilter = (() => {
   const v = parseInt(localStorage.getItem('wolf-task-filter'), 10);
@@ -42,7 +47,9 @@ let calSelectedKey = null;     // calendar view: selected day 'YYYY-MM-DD'
 const settings = {
   alwaysOnTop: true,
   weather: true,
-  aiKey: '',        // OpenAI API key for the AI assistant fallthrough (set in Settings)
+  aiKey: '',              // OpenRouter API key for the AI assistant fallthrough (set in Settings)
+  assistantMode: 'online', // 'online' (AI-first) or 'offline' (local terminal commands only)
+  conflictWindowMin: 30,   // minutes: deadlines within this window on the same day "overlap"
 };
 
 // === API wrapper (Electron or browser fallback) ===
@@ -60,6 +67,25 @@ const api = {
     // falls back to the in-window panel.
     if (hasElectron) window.electronAPI.openNotesPanel();
     else openNotesPanel();
+  },
+  openStats() {
+    if (hasElectron) window.electronAPI.openStats();
+    else showToast('📊 Stats page runs in the desktop app');
+  },
+  openInfo() {
+    // Electron: the info card is its own window (clock/weather/quote) parked
+    // in the middle column. Browser preview falls back to the in-window popup.
+    if (hasElectron) window.electronAPI.openInfo();
+    else toggleInfoPopup();
+  },
+  fullView() {
+    if (hasElectron) window.electronAPI.fullView();
+    else {
+      // Browser preview: open every in-window panel at once.
+      showPlanner();
+      toggleInfoPopup();
+      openNotesPanel();
+    }
   },
   writeClipboard(text) {
     if (hasElectron) return window.electronAPI.writeClipboard(text);
@@ -109,6 +135,10 @@ const api = {
 
 // === Initialize ===
 function init() {
+  // Self-heal old class/category ids that collided (the AI could save many
+  // classes in one response with identical Date.now() ids). Runs before any
+  // render so tags resolve to the correct class.
+  repairMemoryIds();
   // Panels opened from the floating launcher button window.
   api.onOpenPanel(({ action }) => {
     switch (action) {
@@ -119,6 +149,7 @@ function init() {
       case 'focus': openFocusPanel(); break;
       case 'settings': openSettingsPanel(); break;
       case 'categories': openCategoriesPanel(); break;
+      case 'classes': openClassesPanel(); break;
     }
   });
   api.onScreenshotDone(() => showToast('Screenshot copied to clipboard! 📋'));
@@ -132,6 +163,20 @@ function init() {
       // Wake robustness: force the planner back on screen even if it was left
       // panel-hidden — the status bar used to come back without the planner.
       showPlanner();
+      // Futuristic slide-up + fade-in on summon (one-shot, removed after it
+      // finishes so the panel's own transform/opacity rules stay in charge).
+      const glass = document.querySelector('.tasks-panel-glass');
+      if (glass) {
+        glass.classList.remove('wake-in');
+        void glass.offsetWidth; // restart the animation on every summon
+        glass.classList.add('wake-in');
+        const onWakeEnd = (e) => {
+          if (e.target !== glass) return;
+          glass.classList.remove('wake-in');
+          glass.removeEventListener('animationend', onWakeEnd);
+        };
+        glass.addEventListener('animationend', onWakeEnd);
+      }
     }
     sendInteractiveBounds();
     // Toast floats above the faded planner so the action is always confirmed.
@@ -205,6 +250,7 @@ function init() {
   // forced here (not read from storage) so every window is always black,
   // whatever was persisted by an older build with a theme picker.
   document.body.dataset.theme = 'black';
+  applyProtocol(); // daily-protocol accent (cyan default until one is chosen)
 
   updateClock();
   setInterval(updateClock, 1000);
@@ -252,10 +298,96 @@ function init() {
 
   // Deadline reminders: check every 30s (cheap — only iterates deadlines and
   // compares timestamps) so 30/20/10/5-min toasts and the due alert fire on
-  // time even while the planner is hidden.
+  // time even while the planner is hidden. Class reminders ride the same tick.
   tickDeadlineReminders();
   setInterval(tickDeadlineReminders, 30000);
+  tickClassReminders();
+  setInterval(tickClassReminders, 30000);
 }
+
+// The centered startup screen now lives in its own always-on-top window
+// (boot.html). When the user clicks through it, main sends `boot-done` here
+// so the planner can show the daily protocol picker (if not chosen today).
+if (window.electronAPI && window.electronAPI.onBootDone) {
+  window.electronAPI.onBootDone(() => {
+    // The Jarvis card is dismissed — glide the planner glass up underneath.
+    const glass = document.querySelector('.tasks-panel-glass');
+    if (glass) {
+      glass.classList.remove('boot-summon');
+      void glass.offsetWidth; // restart the animation on every boot-through
+      glass.classList.add('boot-summon');
+      // Drop the class once the animation ends: its fill-mode would keep
+      // overriding the panel's own transforms/opacity (e.g. a later
+      // panel-hidden collapse would never visually hide the glass). Only the
+      // glass's OWN animationend counts — child animations bubble too.
+      const onSummonEnd = (e) => {
+        if (e.target !== glass) return;
+        glass.classList.remove('boot-summon');
+        glass.removeEventListener('animationend', onSummonEnd);
+      };
+      glass.addEventListener('animationend', onSummonEnd);
+    }
+    maybeShowProtocol();
+  });
+}
+
+// === Daily Protocol (startup choice: Productive / Workout / Rest / Play) ===
+// Persisted per-day; the dashboard's accent color follows the chosen mode.
+const PROTOCOL_KEY = 'wolf-protocol';
+function todayProtocol() {
+  try { return JSON.parse(localStorage.getItem(PROTOCOL_KEY)) || null; } catch (e) { return null; }
+}
+function currentProtocol() {
+  const p = todayProtocol();
+  const today = dayKey(new Date());
+  return (p && p.date === today && p.protocol) ? p.protocol : null;
+}
+function broadcastProtocol() {
+  if (hasElectron && window.electronAPI && window.electronAPI.sendProtocol) {
+    window.electronAPI.sendProtocol(currentProtocol());
+  }
+}
+function applyProtocol() {
+  const protocol = currentProtocol();
+  if (protocol) document.body.dataset.protocol = protocol;
+  else delete document.body.dataset.protocol;
+  broadcastProtocol();
+}
+function selectProtocol(protocol) {
+  localStorage.setItem(PROTOCOL_KEY, JSON.stringify({ protocol, date: dayKey(new Date()) }));
+  document.body.dataset.protocol = protocol;
+  broadcastProtocol();
+  dismissProtocolModal();
+  showToast('Protocol: ' + protocol.charAt(0).toUpperCase() + protocol.slice(1));
+}
+function showProtocolModal() {
+  const modal = document.getElementById('protocol-modal');
+  if (!modal) return;
+  modal.classList.remove('closing');
+  modal.classList.add('open');
+}
+function dismissProtocolModal() {
+  const modal = document.getElementById('protocol-modal');
+  if (!modal) return;
+  modal.classList.add('closing');
+  modal.classList.remove('open');
+  setTimeout(() => modal.classList.remove('closing'), 350);
+}
+function maybeShowProtocol() {
+  const p = todayProtocol();
+  const today = dayKey(new Date());
+  if (!p || p.date !== today) showProtocolModal();
+}
+(function wireProtocolUI() {
+  const modal = document.getElementById('protocol-modal');
+  if (!modal) return;
+  modal.addEventListener('click', (e) => {
+    const card = e.target.closest('.protocol-card');
+    if (card && card.dataset.protocol) selectProtocol(card.dataset.protocol);
+    // Locked: clicking the backdrop does NOT dismiss the picker — the user
+    // must choose a protocol for the day.
+  });
+})();
 
 // === Send interactive element bounds to main process for cursor polling ===
 // The planner glass, popups and modal are interactive at once (no hover-arm
@@ -373,23 +505,25 @@ function updateClock() {
   popupDate.textContent = now.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' });
 }
 
-// === Weather (mock) ===
-const weatherOptions = [
-  { icon: '☀️', temp: '74°F', desc: 'Sunny' },
-  { icon: '⛅', temp: '68°F', desc: 'Partly cloudy' },
-  { icon: '🌤️', temp: '70°F', desc: 'Fair' },
-  { icon: '🌧️', temp: '62°F', desc: 'Light rain' },
-  { icon: '❄️', temp: '45°F', desc: 'Snow flurries' },
-];
-
+// === Weather (live forecast via Open-Meteo — free, no key) ===
+// window.WolfWeather is the shared module loaded by weather.js; it caches the
+// forecast + IP-based location in localStorage so the Info window reuses the
+// same fetch (one call per 10 min for the whole app).
 function updateWeather() {
   if (!settings.weather) {
     weatherIcon.textContent = '—'; weatherTemp.textContent = ''; weatherDesc.textContent = 'Weather off'; return;
   }
-  const w = weatherOptions[Math.floor(Math.random() * weatherOptions.length)];
-  weatherIcon.textContent = w.icon; weatherTemp.textContent = w.temp; weatherDesc.textContent = w.desc;
+  if (!window.WolfWeather || !window.WolfWeather.get) {
+    weatherIcon.textContent = '🌡️'; weatherTemp.textContent = ''; weatherDesc.textContent = 'Weather unavailable'; return;
+  }
+  window.WolfWeather.get().then((w) => {
+    if (!settings.weather) return; // toggled off while fetching
+    weatherIcon.textContent = w.icon || '—';
+    weatherTemp.textContent = w.temp || '';
+    weatherDesc.textContent = w.desc ? (w.desc + (w.city ? ' · ' + w.city : '')) : '';
+  });
 }
-setInterval(() => { if (settings.weather) updateWeather(); }, 300000);
+setInterval(() => { if (settings.weather) updateWeather(); }, 600000);
 
 // === Quotes ===
 const quotes = [
@@ -416,8 +550,8 @@ app.addEventListener('click', (e) => {
   closeFocusPanel();
 });
 
-// Browser-only launcher button (hidden in Electron — button.html owns the
-// ring menu there). Clicking it opens the ring around the button.
+// Browser-only launcher button (hidden in Electron — the desktop app uses
+// the assistant's suggestion chips instead). Clicking it opens the ring.
 const launcherEl = document.getElementById('browser-launcher');
 if (launcherEl) {
   launcherEl.addEventListener('click', (e) => {
@@ -458,6 +592,14 @@ if (aiKeyInput) aiKeyInput.addEventListener('change', function() {
   settings.aiKey = this.value.trim();
   saveSettings();
 });
+const conflictMinInput = document.getElementById('setting-conflict-min');
+if (conflictMinInput) conflictMinInput.addEventListener('change', function() {
+  const n = parseInt(this.value, 10);
+  settings.conflictWindowMin = isNaN(n) || n < 0 ? 0 : n;
+  saveSettings();
+});
+const exportBtn = document.getElementById('export-data');
+if (exportBtn) exportBtn.addEventListener('click', () => doExportData());
 
 function openSettingsPanel() {
   settingsPanel.classList.remove('panel-hidden');
@@ -473,11 +615,41 @@ function loadSettings() {
   document.getElementById('setting-ontop').checked = settings.alwaysOnTop;
   const aiKeyEl = document.getElementById('setting-ai-key');
   if (aiKeyEl) aiKeyEl.value = settings.aiKey || '';
+  const cmEl = document.getElementById('setting-conflict-min');
+  if (cmEl) cmEl.value = settings.conflictWindowMin != null ? settings.conflictWindowMin : 30;
   // Apply the saved on-top preference at startup — the window is created
   // always-on-top, so without this the toggle only worked mid-session.
   api.setAlwaysOnTop(settings.alwaysOnTop);
 }
 function saveSettings() { localStorage.setItem('wolf-pet-settings', JSON.stringify(settings)); }
+
+// Export tasks/deadlines/notes/settings to a JSON file (Electron save dialog
+// or a browser download as a fallback).
+function doExportData() {
+  const payload = {
+    app: 'wolf',
+    exportedAt: new Date().toISOString(),
+    tasks,
+    deadlines,
+    categories,
+    notes: loadNotes(),
+    settings,
+  };
+  const json = JSON.stringify(payload, null, 2);
+  if (hasElectron && window.electronAPI && window.electronAPI.exportData) {
+    window.electronAPI.exportData(json).then((ok) => showToast(ok ? '💾 Data exported' : 'Export cancelled'));
+  } else {
+    const blob = new Blob([json], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'wolf-data.json';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(a.href);
+    showToast('💾 Data exported (download)');
+  }
+}
 
 // === Daily date key (used by the planner to prune finished tasks) ===
 const dayKeyNow = () => {
@@ -642,6 +814,7 @@ function closeAllPopups() {
   assistantPanel.classList.add('popup-hidden');
   notesPanel.classList.add('panel-hidden');
   categoriesPanel.classList.add('panel-hidden');
+  classesPanel.classList.add('panel-hidden');
   focusPanel.classList.add('popup-hidden');
   // The ring opens above everything — the add/edit modal must not stay
   // behind its backdrop (it would cover the ring and eat its clicks).
@@ -824,6 +997,7 @@ document.getElementById('vault-clear').addEventListener('click', (e) => {
 // Rule-based natural-language commands over the same tasks/deadlines state
 // the planner uses — no AI needed, works offline, replies in the chat.
 let assistantBooted = false;
+let assistantHistory = [];          // recent {role, content} turns, fed to the AI for follow-up context
 const ASSISTANT_PENDING = { q: null }; // follow-up selection state
 
 const ASSISTANT_HELP =
@@ -831,10 +1005,17 @@ const ASSISTANT_HELP =
   '• "add task write report for 2h by Friday 3pm"\n' +
   '• "I have a test next Thursday at 2pm"\n' +
   '• "completed the report for 35 mins"\n' +
-  '• "delete task report"\n' +
+  '• "delete task report" · "reopen task report"\n' +
+  '• "start the focus timer for write report"\n' +
   '• "remind me at 5pm to call mom"\n' +
-  '• "show clipboard" · "show screenshots"\n' +
-  '• "what\'s due today?" · "list my tasks" · "help"';
+  '• "remember my history class is Monday Wednesday at 9am"\n' +
+  '• "my schedule: history mon wed 9am, math tue thu 10am" (multiple at once)\n' +
+  '• "history homework due tomorrow" (auto-dates to your class)\n' +
+  '• "what classes do I have?" · "what\'s my next class?"\n' +
+  '• "show my stats" · "switch to week view"\n' +
+  '• "plan my day: gym at 7am; standup 9:30; deep work"\n' +
+  '• "how was my week?" · "what\'s due today?"\n' +
+  '• "show clipboard" · "show screenshots" · "help"';
 
 function openAssistantPanel() {
   assistantPanel.classList.remove('popup-hidden');
@@ -869,6 +1050,7 @@ function assistantSend() {
   const q = input.value.trim();
   if (!q) return;
   input.value = '';
+  autoGrowAssistantInput(); // reset the textarea back to one line
   assistantSay(q, 'user');
   assistantAnswer(q).then(assistantEmit);
 }
@@ -891,7 +1073,151 @@ function assistantEmit(reply) {
 
 // Pure natural-language parser (extracted to assistant-parser.js so it can be
 // unit-tested in isolation). Loaded as a <script> before renderer.js.
-const { assistantCleanName, assistantExtractWhen } = window.AssistantParser;
+const { assistantCleanName, assistantExtractWhen, assistantExtractRecur, nextRecurDate, assistantExtractClassDef, assistantExtractClassDefs, assistantMatchClass, nextClassDate, nextClassDateTime } = window.AssistantParser;
+
+// === Terminal-style slash commands (work in BOTH online & offline modes) ===
+const SLASH_HELP =
+  'Offline terminal commands — fields are comma-separated (only name is required):\n' +
+  '/task <name>, <date?>, <category?>, <time?>, <duration?>\n' +
+  '/deadline <name>, <date?>, <time?>\n' +
+  '/complete <name>   ·   /delete <name>   ·   /reopen <name>   ·   /move <name>, <when>   ·   /progress <name>, <minutes>\n' +
+  '/focus <name?>, <minutes?>   ·   /view tasks|calendar|week   ·   /stats\n' +
+  '/plan <item>; <item>; …   ·   /week (weekly recap)\n' +
+  '/classes (my classes)   ·   /forget <class>   ·   /list   ·   /due   ·   /help   ·   /mode online|offline\n' +
+  '🧠 I remember your classes — tell me e.g. "remember my history class is Monday Wednesday at 9am", then "history homework due tomorrow" just works.';
+
+function parseDurationField(a) {
+  const m = String(a).trim().match(/^(\d+(?:\.\d+)?)\s*(h|hr|hrs|hour|hours|m|min|mins|minute|minutes)$/i);
+  if (!m) return 0;
+  return Math.round(m[2][0].toLowerCase() === 'h' ? parseFloat(m[1]) * 60 : parseFloat(m[1]));
+}
+function parseTimeField(a) {
+  const s = String(a).trim();
+  let m = s.match(/^(\d{1,2}):(\d{2})\s*(am|pm)?$/i);
+  if (m) {
+    let h = parseInt(m[1], 10); const min = parseInt(m[2], 10); const ap = (m[3] || '').toLowerCase();
+    if (ap === 'pm' && h < 12) h += 12;
+    if (ap === 'am' && h === 12) h = 0;
+    return pad2(h) + ':' + pad2(min);
+  }
+  m = s.match(/^(\d{1,2})\s*(am|pm)$/i);
+  if (m) {
+    let h = parseInt(m[1], 10); const ap = m[2].toLowerCase();
+    if (ap === 'pm' && h < 12) h += 12;
+    if (ap === 'am' && h === 12) h = 0;
+    return pad2(h) + ':00';
+  }
+  return '';
+}
+function parseDateField(a) {
+  const s = String(a).trim();
+  if (/^(none|-|n\/a|skip)$/i.test(s)) return ''; // explicit "no date"
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const w = assistantExtractWhen(s);
+  return w ? w.due : null;
+}
+
+function assistantSlashCommand(q) {
+  const segments = q.slice(1).split(',').map((s) => s.trim());
+  const head = (segments[0] || '').split(/\s+/);
+  const cmd = (head[0] || '').toLowerCase();
+  const args = [head.slice(1).join(' '), ...segments.slice(1)].map((s) => s.trim()).filter(Boolean);
+
+  if (cmd === 'task' || cmd === 't' || cmd === 'todo') {
+    let name = args[0];
+    let recur = '';
+    if (name) { const rr = assistantExtractRecur(name); if (rr) { name = rr.rest; recur = rr.recur; } }
+    if (!name) return 'Usage: /task <name>, <date?>, <category?>, <time?>, <duration?>';
+    let due = '', time = '', category = '', durationMin = 0;
+    for (let i = 1; i < args.length; i++) {
+      const a = args[i];
+      const d = parseDurationField(a); if (d) { durationMin = d; continue; }
+      const t = parseTimeField(a); if (t) { time = t; continue; }
+      const dt = parseDateField(a); if (dt !== null) { due = dt; continue; }
+      const c = categories.find((x) => x.name.toLowerCase() === a.toLowerCase());
+      if (c) { category = c.id; continue; }
+    }
+    tasks.unshift({ id: Date.now(), name, due, durationMin, done: false, category, recur, progressMin: 0 });
+    saveTasks(); renderTasks(); refreshActiveView();
+    let r = '✅ Added "' + name + '"';
+    if (due) r += ' · due ' + fmtDateShort(due);
+    if (durationMin) r += ' · ' + fmtMin(durationMin);
+    if (category) { const c = categories.find((x) => x.id === category); if (c) r += ' · in ' + c.name; }
+    return r + '.';
+  }
+
+  if (cmd === 'deadline' || cmd === 'dl' || cmd === 'event') {
+    const name = args[0];
+    if (!name) return 'Usage: /deadline <name>, <date?>, <time?>';
+    let due = '', time = '';
+    for (let i = 1; i < args.length; i++) {
+      const a = args[i];
+      const t = parseTimeField(a); if (t) { time = t; continue; }
+      const dt = parseDateField(a); if (dt !== null) { due = dt; continue; }
+    }
+    const dl = { id: Date.now(), name, due, time, done: false };
+    deadlines.unshift(dl);
+    saveDeadlines(); renderDeadlines(); refreshActiveView(); tickDeadlineReminders();
+    warnDeadlineConflict(dl);
+    let r = '✅ Deadline added: "' + name + '"';
+    if (due) r += ' · ' + fmtDateShort(due);
+    if (time) r += ' at ' + fmtTimeOfDay(time);
+    return r + '.';
+  }
+
+  if (cmd === 'complete' || cmd === 'done' || cmd === 'finish') return assistantPickTask(args.join(' '), 'complete', {});
+  if (cmd === 'delete' || cmd === 'rm' || cmd === 'remove') return assistantPickTask(args.join(' '), 'delete', null);
+  if (cmd === 'reopen') return assistantPickTask(args.join(' '), 'reopen', null);
+  if (cmd === 'move' || cmd === 'reschedule' || cmd === 'mv') {
+    if (!args.length || !args[1]) return 'Usage: /move <name>, <when>';
+    return assistantReschedule(args[0] + ' to ' + args.slice(1).join(' '));
+  }
+  if (cmd === 'progress' || cmd === 'log') {
+    const name = args[0] || '';
+    if (!name) return 'Usage: /progress <name>, <minutes>';
+    let mins = 15;
+    const m = args.find(a => /^\d+\s*(?:m|min|mins|minutes?)$/i.test(a));
+    if (m) mins = parseInt(m, 10) || 15;
+    return assistantPickTask(name, 'progress', { minutes: mins });
+  }
+  if (cmd === 'focus' || cmd === 'pomodoro') {
+    const name = args[0] || '';
+    let mins = 0;
+    const m = args.find(a => /^\d+\s*(?:m|min|mins|minutes?|h|hr|hours?)$/i.test(a));
+    if (m) { const n = parseInt(m, 10) || 0; mins = /\bh/i.test(m) ? n * 60 : n; }
+    return assistantStartFocus(name, mins);
+  }
+  if (cmd === 'view') {
+    const v = (args[0] || '').toLowerCase();
+    if (v === 'tasks' || v === 'calendar' || v === 'week') { api.setMode(v); return '✅ Switched to ' + v + ' view.'; }
+    return 'Usage: /view tasks | calendar | week';
+  }
+  if (cmd === 'plan' || cmd === 'schedule') {
+    const raw = args.join(' ').trim();
+    if (!raw) return 'Usage: /plan <item>; <item>; … (times → deadlines, no time → tasks)';
+    return assistantPlan(raw);
+  }
+  if (cmd === 'stats' || cmd === 'progress' || cmd === 'summary') { api.openStats(); return '📊 Opening your daily stats…'; }
+  if (cmd === 'list' || cmd === 'tasks' || cmd === 'ls') return assistantList();
+  if (cmd === 'due') return assistantDue();
+  if (cmd === 'week' || cmd === 'recap' || cmd === 'weekly') return assistantWeekRecap();
+  if (cmd === 'classes' || cmd === 'class' || cmd === 'schedule') return assistantListClasses();
+  if (cmd === 'forget' || cmd === 'unremember') {
+    const n = args.join(' ');
+    if (!n) return 'Usage: /forget <class name>';
+    return forgetClass(n);
+  }
+  if (cmd === 'help' || cmd === 'h') return SLASH_HELP;
+  if (cmd === 'mode') {
+    const m = (args[0] || '').toLowerCase();
+    if (m === 'online' || m === 'on') { settings.assistantMode = 'online'; saveSettings(); updateAssistantModeUI(); broadcastAssistantMode(); return '🌐 Online mode — free-form messages use the AI (OpenRouter).';
+    }
+    if (m === 'offline' || m === 'off') { settings.assistantMode = 'offline'; saveSettings(); updateAssistantModeUI(); broadcastAssistantMode(); return '📴 Offline mode — instant local commands only (no AI).';
+    }
+    return 'Current mode: ' + (settings.assistantMode === 'offline' ? '📴 offline' : '🌐 online') + '. Use /mode online or /mode offline.';
+  }
+  return 'Unknown command "/' + cmd + '". Type /help for the list.';
+}
 
 // The assistant's brain: turns a natural-language message into a reply
 // string (or a { kind: 'clipboard', ... } payload) and performs the action
@@ -904,6 +1230,9 @@ function assistantHandleText(raw) {
   if (!q) return 'Say something like "I have a test next Thursday at 2pm" or "show screenshots".';
   const lq = q.toLowerCase();
 
+  // Terminal-style slash commands take priority in both modes.
+  if (q[0] === '/') return assistantSlashCommand(q);
+
   // Follow-up selection: "1", "the second one", "#3", or a time answer.
   if (ASSISTANT_PENDING.q) {
     const r = assistantHandleFollowUp(q);
@@ -912,34 +1241,165 @@ function assistantHandleText(raw) {
   }
 
   if (/^(help|what can you do|commands|help me)\b/.test(lq)) return ASSISTANT_HELP;
-  if (/(?:clipboard|screenshot|screen\s*shot|copied|history)/.test(lq)) return assistantClipboard(lq);
+  // Clipboard/screenshot queries. Bare "history" is deliberately NOT a
+  // trigger — it's a school subject ("history homework"), so only
+  // clipboard-flavored phrases open the vault.
+  if (/(?:clipboard|screenshots?|screen\s*shot|copied\s*(?:items?|text)?|(?:paste|copy|clipboard)\s+history|recent\s+copies)/i.test(lq)) return assistantClipboard(lq);
+  if (/(?:stats|statistics|progress|how\s+(?:much|many)\s+(?:have\s+i\s+)?(?:done|progress)|productivity|today'?s\s+(?:summary|report))/i.test(lq)) { api.openStats(); return '📊 Opening your daily stats…'; }
+  if (/(?:start|begin|launch|run)\s+(?:a\s+|the\s+)?(?:focus|pomodoro)\s+(?:timer|session)?/i.test(lq)) return assistantFocusCommand(q);
+  if (/\b(?:switch|go|change)\s+(?:to|the)?\s*(?:week|calendar|tasks)\s*(?:view)?\b/i.test(lq)) return assistantViewCommand(q);
+  if (/(?:info|weather|forecast|temperature)\b/.test(lq)) { api.openInfo(); return 'ℹ️ Opened Info & Weather.'; }
+  if (/(?:settings?|preferences?|config)\b/.test(lq)) { openSettingsPanel(); return '⚙️ Opened Settings.'; }
+  if (/(?:notes?|jot|memo)\b/.test(lq)) { api.openNotesPanel(); return '📝 Opened Quick Notes.'; }
   if (lq.includes('remind')) return assistantRemind(q);
+  // "what's my next class?" / "when is history class?" — answered from memory.
+  if (/(?:what|when|which)\s*(?:is|'s)?\s*(?:my\s+)?(?:next|first|upcoming)?\s*(?:class|period)\b|when\s+is\s+.+?\s+class\b/i.test(lq)) {
+    const r = assistantNextClass(q);
+    if (r) return r;
+  }
+  // Memory: "remember my history class is Monday Wednesday at 9am" / "my
+  // schedule: history mon wed 9am, math tue thu 10am" / "my classes are
+  // history, math". Falls through when the text is not a class definition
+  // ("add history class homework" is a task, not a schedule).
+  if (/(?:remember|save|note|set|add|log|store)\b[^\n]*\b(?:class|course|subject|schedule|timetable)\b/i.test(q) ||
+      /(?:my|the|our)\s+(?:classes?|courses?|subjects?|schedule|timetable)\b/i.test(lq)) {
+    const r = assistantRememberClass(q);
+    if (r !== null) return r;
+  }
+  // Memory: "what classes do I have?" / "show my schedule"
+  if (/(?:what|show|list|display)\b[^\n]*\b(?:classes?|courses?|subjects?|schedule|timetable)\b/i.test(lq)) {
+    const r = assistantListClasses();
+    if (r !== null) return r;
+  }
   if (/^(?:please\s+)?(?:add|create|new)\s+/.test(lq)) return assistantAdd(q);
   // Events phrased without "add": "I have a test next Thursday at 2pm".
   if (/(^|\s)(?:i\s+have|i've\s+got|ive\s+got|i\s+got|got|there'?s|there\s+is|we\s+have)\s+(?:a\s+|an\s+|the\s+)?/.test(lq)) {
     const r = assistantEvent(q);
     if (r) return r;
   }
+  // Class homework without "I have": "history homework due tomorrow" /
+  // "history test on friday" → routed as an add so the remembered class
+  // tags it and dates it. Not for pure questions ("what's due tomorrow?").
+  if (assistantMatchClass(assistantMemory, q) && /\b(?:due|by|tomorrow|tonight|today|next|on|at)\b/i.test(q) && !/^(?:what|show|list|is|are|when|do)\b/.test(lq)) {
+    const r = assistantAdd('add ' + q.replace(/^(?:please\s+)?/i, ''));
+    if (r) return r;
+  }
   if (/(?:complete|completed|done|finish|finished|did|knocked|checked)/.test(lq)) return assistantComplete(q);
   if (/(?:delete|remove|get\s+rid|drop)/.test(lq)) return assistantDelete(q);
+  if (/\b(?:reschedule|move|snooze|postpone|push|bump)\b/.test(lq)) return assistantReschedule(q);
+  // Weekly recap: "how was my week?" / "weekly summary".
+  if (/(?:how\s+was\s+my\s+week|week(?:ly)?\s+(?:recap|summary|report|review)|my\s+week\s+(?:recap|summary|report)|recap\s+(?:my\s+)?week)/i.test(lq)) return assistantWeekRecap();
+  // "plan my day: …" → split a list into tasks/deadlines.
+  if (/^(?:please\s+)?plan\s+(?:my\s+|the\s+)?(?:day|today|tomorrow)\b/i.test(lq)) {
+    return assistantPlan(q.replace(/^(?:please\s+)?plan\s+(?:my\s+|the\s+)?(?:day|today|tomorrow)[:,\s]*/i, ''));
+  }
+  // "I'll work on this deadline now" / "work on <deadline> for 2h" → a task
+  // due today with the deadline's name + class tag (kept above the generic
+  // "deadline" fallback so the word "deadline" doesn't swallow it).
+  const workOn = assistantWorkOnDeadline(q);
+  if (workOn !== null) return workOn;
   if (/(?:due|today|tomorrow|schedule|plan|what'?s\s+(?:on|up)|deadline)/.test(lq)) return assistantDue();
   if (/(?:list|show|my\s+tasks|all\s+tasks)/.test(lq)) return assistantList();
   return null; // no rule matched — the AI fallthrough handles it (or a helpful hint)
 }
 
-// === AI fallthrough: when no rule matches, ask a real LLM (OpenAI) to turn
+// === AI fallthrough: when no rule matches, ask a real LLM (OpenRouter) to turn
 // the message into a structured app action. Needs an API key in Settings. ===
+// Records the conversation and routes to the core handler. assistantHistory
+// feeds the AI's context so it can follow up across messages.
 async function assistantAnswer(raw) {
-  const r = assistantHandleText(raw);
-  if (r !== null) return r;
-  return assistantAIFallback(raw);
+  const reply = await assistantAnswerCore(raw);
+  assistantHistory.push({ role: 'user', content: raw });
+  assistantHistory.push({ role: 'assistant', content: reply });
+  if (assistantHistory.length > 20) assistantHistory = assistantHistory.slice(-20);
+  return reply;
 }
+
+async function assistantAnswerCore(raw) {
+  const key = (settings.aiKey || '').trim();
+  const q = String(raw || '').replace(/\s+/g, ' ').trim()
+    .replace(/^(oh|so|um|uh|ok|okay|hey|hi|yo|like|well|hmm|also)[,\s]+/i, '');
+  const lq = q.toLowerCase();
+
+  // These stay offline & instant: follow-up answers ("2"), help, and the
+  // clipboard/screenshot view toggles. Everything else goes to the AI first
+  // when a key is set (so free-form requests are actually understood), with
+  // the offline rule parser as the fallback.
+  const offlineFirst =
+    !!ASSISTANT_PENDING.q ||
+    q[0] === '/' ||
+    /^(help|what can you do|commands|help me)\b/.test(lq) ||
+    /(?:clipboard|screenshots?|screen\s*shot|copied\s*(?:items?|text)?|(?:paste|copy|clipboard)\s+history|recent\s+copies)/i.test(lq) ||
+    /(?:stats|statistics|how\s+(?:much|many)\s+(?:have\s+i\s+)?(?:done|progress)|productivity|today'?s\s+(?:summary|report))/i.test(lq) ||
+    /(?:start|begin|launch|run)\s+(?:a\s+|the\s+)?(?:focus|pomodoro)\s+(?:timer|session)?/i.test(lq) ||
+    /\b(?:switch|go|change)\s+(?:to|the)?\s*(?:week|calendar|tasks)\s*(?:view)?\b/i.test(lq) ||
+    /(?:info|weather|forecast|temperature|settings?|preferences?|config|notes?|jot|memo)\b/i.test(lq) ||
+    /(?:how\s+was\s+my\s+week|week(?:ly)?\s+(?:recap|summary|report|review)|my\s+week\s+(?:recap|summary|report)|recap\s+(?:my\s+)?week)/i.test(lq) ||
+    /^(?:please\s+)?plan\s+(?:my\s+|the\s+)?(?:day|today|tomorrow)\b/i.test(lq) ||
+    /(?:what|when|which)\s*(?:is|'s)?\s*(?:my\s+)?(?:next|first|upcoming)?\s*(?:class|period)\b|when\s+is\s+.+?\s+class\b/i.test(lq) ||
+    /(?:remember|save|note|set|add|log|store)\b[^\n]*\b(?:class|course|subject|schedule|timetable)\b/i.test(q) ||
+    /(?:my|the|our)\s+(?:classes?|courses?|subjects?|schedule|timetable)\b/i.test(lq);
+
+  let aiReason = null;
+  const offline = settings.assistantMode === 'offline';
+  if (key && !offline && !offlineFirst) {
+    const ai = await assistantAIFallback(raw);
+    if (ai.ok) {
+      console.log('[assistant] AI handled:', q);
+      return '🤖 ' + ai.reply;
+    }
+    aiReason = ai.reason;
+    console.log('[assistant] AI unavailable (' + aiReason + ') — falling back offline');
+  }
+
+  const r = assistantHandleText(raw);
+  if (r !== null) {
+    console.log('[assistant] offline handled:', q);
+    return r;
+  }
+
+  if (aiReason === 'bad-key') return '⚠️ Your OpenRouter key was rejected. Check it in Settings ⚙️ (it should start with sk-or-…). Offline commands still work: say help.';
+  if (aiReason) return '⚠️ AI unavailable right now (free models are rate-limited) and I couldn\'t match that offline. Offline commands still work: say help.';
+  return 'Hmm, I did not catch that — I understand tasks, deadlines, reminders, clipboard and screenshots. Say help for examples.\n\n💡 Add an OpenRouter API key in Settings (⚙️) to let me handle free-form requests with AI.';
+}
+
+// Free models on OpenRouter often wrap JSON in markdown fences or add prose,
+// so extract the first balanced JSON object instead of assuming raw JSON.
+function parseAssistantJson(content) {
+  const text = String(content);
+  try { return JSON.parse(text); } catch (e) { /* fall through to extraction */ }
+  const first = text.indexOf('{');
+  if (first === -1) throw new Error('no JSON object in response');
+  let depth = 0, inStr = false, esc = false;
+  for (let i = first; i < text.length; i++) {
+    const ch = text[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === '\\') esc = true;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') inStr = true;
+    else if (ch === '{') depth++;
+    else if (ch === '}') { depth--; if (depth === 0) return JSON.parse(text.slice(first, i + 1)); }
+  }
+  throw new Error('unterminated JSON object in response');
+}
+
+// Free models on OpenRouter are rate-limited per-provider (20 req/min,
+// ~50–1000 req/day) AND churn over time, so try a few in turn — a throttled
+// or delisted upstream never blocks the whole assistant. Ordered fastest
+// first for the structured-JSON extraction this assistant needs.
+const AI_MODELS = [
+  'inclusionai/ling-3.0-flash:free',
+  'openai/gpt-oss-20b:free',
+  'google/gemma-4-31b-it:free',
+  'nvidia/nemotron-3-super-120b-a12b:free',
+];
 
 async function assistantAIFallback(raw) {
   const key = (settings.aiKey || '').trim();
-  if (!key) {
-    return 'Hmm, I did not catch that — I understand tasks, deadlines, reminders, clipboard and screenshots. Say help for examples.\n\n💡 Add an OpenAI API key in Settings (⚙️) to let me handle free-form requests with AI.';
-  }
+  if (!key) return { ok: false, reason: 'no-key' };
 
   const now = new Date();
   const state = {
@@ -954,53 +1414,95 @@ async function assistantAIFallback(raw) {
     })),
     deadlines: deadlines.map((d) => ({ name: d.name, due: d.due || null, time: d.time || null, done: !!d.done })),
     categories: categories.map((c) => c.name),
+    // The assistant's knowledge base: what the user told it about their
+    // world (classes/schedule + facts). Sent so it can resolve homework
+    // against remembered classes and answer schedule questions.
+    memory: {
+      classes: assistantMemory.classes,
+      facts: assistantMemory.facts,
+    },
+    history: assistantHistory.slice(-10),
   };
 
   const system = [
-    'You are the assistant inside a desktop productivity app (tasks + deadlines).',
-    'Control the app by replying with a SINGLE JSON object and nothing else.',
-    'Schema: {reply: short answer, action: {type, ...}}.',
-    'Action types: add_task, add_deadline, complete_task, delete_task, none.',
-    'add_task fields: name, due (YYYY-MM-DD or null), durationMin (number or null), category (name or null).',
-    'add_deadline fields: name, due (YYYY-MM-DD or null), time (HH:MM 24h or null).',
-    'complete_task and delete_task fields: taskQuery (name or unique fragment).',
-    'none means no app change; answer the question in reply.',
+    'You are the assistant inside a desktop productivity app. You control it by replying with a SINGLE JSON object and nothing else.',
+    'Schema: {reply: short answer, actions: [{type, ...}, ...]}.',
+    'Action types:',
+    '  add_task — fields: name, due (YYYY-MM-DD or null), durationMin (number or null), category (name or null).',
+    '  add_deadline — fields: name, due (YYYY-MM-DD or null), time (HH:MM 24h or null), category (class name or null).',
+    '  complete_task, delete_task, reopen_task — field: taskQuery (name or unique fragment).',
+    '  mark_progress — fields: taskQuery, minutes (number).',
+    '  start_focus — fields: taskQuery (optional), durationMin (optional number).',
+    '  set_view — field: view (one of tasks, calendar, week).',
+    '  show_clipboard, show_screenshots, show_stats, open_settings, open_notes — no fields.',
+    '  set_mode — field: mode (online or offline).',
+    '  reschedule_item — fields: name (the task or deadline to move), due (YYYY-MM-DD), time (HH:MM 24h or null).',
+    '  remember_class — fields: name (class name), days (array of 3-letter weekday abbreviations like ["mon","wed","fri"], empty if unknown), time (HH:MM 24h or null).',
+    '  remember_fact — field: text (anything the user wants you to keep track of).',
+    '  none — no app change; put the full answer in reply.',
+    'The app has: tasks (add/complete/delete/reopen/mark progress, with category, duration, due date, recurring), deadlines (with reminders 30/20/10/5 min before), a focus timer (start for a task or a custom duration), three views (tasks/calendar/week), clipboard history, screenshots, quick notes, a daily-stats page, and settings.',
+    'The state includes a memory: classes (name, days like ["mon","wed"], time) and facts. Use it to understand the user\'s school/work schedule.',
+    'When the user tells you about their classes or schedule, save EACH class with its OWN remember_class action — one message can describe several ("history Mon/Wed 9am, math Tue/Thu 10am" → two actions). Normalize names: title case, drop a trailing "class" word, keep abbreviations like "AP us history".',
+    'If a class is given without days or time, save it anyway (empty days/time) and ask in the reply for the missing days and time.',
+    'When a task or deadline mentions a remembered class (e.g. "history homework"), set category to that class name for BOTH add_task and add_deadline. When NO date is given, set due to the NEXT occurrence of that class computed from the current date.',
+    'When the user says they will work on an existing deadline NOW (e.g. "I\'ll work on this deadline now", "work on <deadline> for 2 hours"), add_task with name = that deadline\'s name, due = today (YYYY-MM-DD), durationMin = any time they mention, and category = that deadline\'s class. Do NOT create a new deadline.',
+    'When the user asks to move, reschedule, postpone, or snooze an item ("move X to Friday", "reschedule Y for tomorrow 3pm"), use reschedule_item with the item name and the new absolute due/time.',
+    'Answer schedule questions ("what is my next class?", "when is history class?", "what days is math?") with type none, computing the next occurrence from memory.classes days + time and the provided current time — never invent a schedule.',
     'Rules: output valid JSON only; convert relative dates and times (tomorrow, next Thursday, 3pm, in 2 hours) to absolute values using the provided current time; dates are YYYY-MM-DD, times are 24-hour HH:MM.',
-    'For questions (what is due, what can you do), use type none and put the full answer in reply.',
-    'Only complete or delete tasks that actually exist in the provided task list; match by name.',
-    'If a request is ambiguous or not actionable, use type none with a helpful reply.',
-    'Never invent tasks. Use the task list you are given.',
+    'For questions (what is due, what can you do, what is my progress), use type none and put the full answer in reply using the provided state.',
+    'Only complete/delete/reopen/mark-progress tasks that actually exist in the provided task list; match by name. When several tasks match, pick the best one or ask in reply.',
+    'Never invent tasks or deadlines. Use the lists you are given.',
+    'When a request lists several items (e.g. "plan my day: gym at 7am, standup at 9:30, deep work 10 to 12"), return one action for EACH item in the actions array.',
+    'Match the user intent to the best action type. For "start the focus timer for X", use start_focus with taskQuery X. For "show me how much I have done today", use show_stats. For "switch to week view", use set_view.',
   ].join('\n');
 
-  try {
-    const res = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + key },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        temperature: 0,
-        response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: system },
-          { role: 'user', content: JSON.stringify({ request: raw, state }) },
-        ],
-      }),
-    });
-    if (!res.ok) {
-      const body = await res.text().catch(() => '');
-      throw new Error('HTTP ' + res.status + (body ? ' ' + body.slice(0, 200) : ''));
+  let lastError = null;
+  let badKey = false;
+  for (const model of AI_MODELS) {
+    if (badKey) break;
+    try {
+      const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + key,
+          'HTTP-Referer': 'https://localhost',
+          'X-Title': 'Wolf Assistant',
+        },
+        body: JSON.stringify({
+          model,
+          temperature: 0,
+          messages: [
+            { role: 'system', content: system },
+            { role: 'user', content: JSON.stringify({ request: raw, state }) },
+          ],
+        }),
+      });
+      if (res.status === 401 || res.status === 403) {
+        badKey = true;
+        throw new Error('key rejected (HTTP ' + res.status + ')');
+      }
+      if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        lastError = new Error('HTTP ' + res.status + (body ? ' ' + body.slice(0, 160) : ''));
+        continue; // free model rate-limited upstream — try the next one
+      }
+      const data = await res.json();
+      const content = data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+      if (!content) { lastError = new Error('empty response'); continue; }
+      const parsed = parseAssistantJson(content);
+      const list = parsed && Array.isArray(parsed.actions) ? parsed.actions
+        : (parsed && parsed.action ? [parsed.action] : (parsed && parsed.type ? [parsed] : []));
+      const applied = assistantApplyActions(list);
+      if (applied) return { ok: true, reply: applied };
+      const reply = (parsed && typeof parsed.reply === 'string' && parsed.reply.trim()) || 'I understood, but I could not map that to an app action.';
+      return { ok: true, reply };
+    } catch (e) {
+      lastError = e;
     }
-    const data = await res.json();
-    const content = data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
-    if (!content) throw new Error('empty response');
-    const parsed = JSON.parse(content);
-    const action = parsed && parsed.action ? parsed.action : parsed;
-    const applied = assistantApplyAction(action);
-    if (applied) return applied;
-    return (parsed && typeof parsed.reply === 'string' && parsed.reply.trim()) || 'I understood, but I could not map that to an app action.';
-  } catch (e) {
-    return '⚠️ AI request failed — check your OpenAI key (Settings ⚙️) and connection. Offline commands still work: say help. (' + (e && e.message ? e.message : 'error') + ')';
   }
+  if (badKey) return { ok: false, reason: 'bad-key' };
+  return { ok: false, reason: 'unavailable' };
 }
 
 // Execute a structured action returned by the AI against the real data.
@@ -1012,30 +1514,85 @@ function assistantApplyAction(action) {
   const durationMin = typeof action.durationMin === 'number' && action.durationMin > 0 ? Math.round(action.durationMin) : 0;
 
   if (type === 'add_task') {
-    const name = assistantCleanName(action.name || '');
+    let name = assistantCleanName(action.name || '');
+    let recur = '';
+    if (name) { const rr = assistantExtractRecur(name); if (rr) { name = rr.rest; recur = rr.recur; } }
     if (!name) return 'What should the task be called?';
     let category = '';
     if (action.category) {
       const found = categories.find((c) => c.name.toLowerCase() === String(action.category).toLowerCase());
       if (found) category = found.id;
     }
-    const t = { id: Date.now(), name, due, durationMin, done: false, category, progressMin: 0 };
+    // Class-aware: a remembered class tags the category and (without a date)
+    // defaults the due date to the class's next meeting.
+    let dueDate = due;
+    const clsInfo = applyClassTo(name, dueDate ? { due: dueDate, time, rest: name } : null);
+    if (clsInfo.when) dueDate = clsInfo.when.due;
+    if (!category && clsInfo.category) category = clsInfo.category;
+    const t = { id: Date.now(), name, due: dueDate, durationMin, done: false, category, recur, progressMin: 0 };
     tasks.unshift(t);
     saveTasks(); renderTasks(); refreshActiveView();
     let r = '✅ Added "' + name + '"';
-    if (due) r += ' · due ' + fmtDateShort(due);
+    if (dueDate) r += ' · due ' + fmtDateShort(dueDate);
     if (durationMin) r += ' · ' + Math.round(durationMin / 60 * 10) / 10 + 'h';
     if (category) { const c = categories.find((x) => x.id === category); if (c) r += ' · in ' + c.name; }
+    if (clsInfo.cls && clsInfo.classDue) r += ' (next ' + clsInfo.cls.name + ' class)';
     return r + '.';
+  }
+  if (type === 'remember_class') {
+    const def = {
+      name: assistantCleanName(action.name || ''),
+      days: Array.isArray(action.days) ? action.days : [],
+      time: /^\d{2}:\d{2}$/.test(action.time || '') ? action.time : '',
+    };
+    if (!def.name) return 'What class should I remember?';
+    const cls = rememberClass(def.name, def.days, def.time);
+    if (!cls) return 'What class should I remember?';
+    let r = '🧠 Remembered: ' + cls.name + ' class';
+    if (cls.days && cls.days.length) r += ' · ' + cls.days.map((d) => DAY_SHORT[d] || d).join(', ');
+    if (cls.time) r += ' · ' + fmtTimeOfDay(cls.time);
+    // No schedule yet → ask for it, and route the user's answer through the
+    // same follow-up flow the offline parser uses.
+    if (!def.days.length && !def.time) {
+      ASSISTANT_PENDING.q = {
+        mode: 'class-schedule',
+        pending: [cls.name],
+        hint: 'Tell me the schedule, e.g. "history Mon Wed at 9am".',
+      };
+      return r + '. What days and time is it? (e.g. "Mon Wed at 9am")';
+    }
+    return r + '. I will auto-date homework for this class.';
+  }
+  if (type === 'remember_fact') {
+    const text = String(action.text || action.name || '').trim();
+    if (!text) return 'What should I remember?';
+    assistantMemory.facts.push({ id: Date.now(), text, at: Date.now() });
+    if (assistantMemory.facts.length > 100) assistantMemory.facts = assistantMemory.facts.slice(-100);
+    saveMemory();
+    return '🧠 Noted — I will remember that.';
   }
   if (type === 'add_deadline') {
     const name = assistantCleanName(action.name || '');
     if (!name) return 'What should the deadline be called?';
-    const d = { id: Date.now(), name, due, time, done: false };
+    // Class-aware: a remembered class fills in a missing date (next meeting)
+    // and tags the deadline so it shows in the class's color.
+    const clsInfo = applyClassTo(name, due ? { due, time, rest: name } : null);
+    const dlDue = clsInfo.when ? clsInfo.when.due : '';
+    const dlTime = clsInfo.when ? clsInfo.when.time : '';
+    let category = '';
+    if (action.category) {
+      const found = categories.find((c) => c.name.toLowerCase() === String(action.category).toLowerCase());
+      if (found) category = found.id;
+    }
+    if (!category && clsInfo.category) category = clsInfo.category;
+    const d = { id: Date.now(), name, due: dlDue, time: dlTime, done: false, category };
     deadlines.unshift(d);
     saveDeadlines(); renderDeadlines(); refreshActiveView(); tickDeadlineReminders();
+    warnDeadlineConflict(d);
     let r = '✅ Deadline added: "' + name + '"';
-    if (due) r += ' · ' + fmtDateShort(due) + (time ? ' at ' + fmtTimeOfDay(time) : '');
+    if (dlDue) r += ' · ' + fmtDateShort(dlDue) + (dlTime ? ' at ' + fmtTimeOfDay(dlTime) : '');
+    if (category) { const c = categories.find((x) => x.id === category); if (c) r += ' · in ' + c.name; }
+    if (clsInfo.cls && clsInfo.classDue) r += ' (next ' + clsInfo.cls.name + ' class)';
     return r + '. I will remind you 30/20/10/5 min before.';
   }
   if (type === 'complete_task') {
@@ -1048,7 +1605,187 @@ function assistantApplyAction(action) {
     if (!q) return 'Which task should I remove? (name it)';
     return assistantPickTask(q, 'delete', null);
   }
+  if (type === 'reopen_task') {
+    const q = String(action.taskQuery || action.name || '').trim();
+    if (!q) return 'Which task should I reopen? (name it)';
+    return assistantPickTask(q, 'reopen', null);
+  }
+  if (type === 'mark_progress') {
+    const q = String(action.taskQuery || action.name || '').trim();
+    const mins = Math.max(1, Math.round(action.minutes || 15));
+    if (!q) return 'Which task did you work on? (name it)';
+    return assistantPickTask(q, 'progress', { minutes: mins });
+  }
+  if (type === 'start_focus') {
+    const q = String(action.taskQuery || action.name || '').trim();
+    const mins = typeof action.durationMin === 'number' && action.durationMin > 0 ? Math.round(action.durationMin) : 0;
+    return assistantStartFocus(q, mins);
+  }
+  if (type === 'set_view') {
+    const v = String(action.view || '').toLowerCase();
+    if (v === 'tasks' || v === 'calendar' || v === 'week') { api.setMode(v); return '✅ Switched to ' + v + ' view.'; }
+    return null;
+  }
+  if (type === 'reschedule_item') {
+    const name = String(action.name || action.taskQuery || '').trim();
+    if (!name) return 'What should I reschedule? (name it)';
+    const when = { due: due || dayKeyNow(), time };
+    const r = rescheduleByName(name, when);
+    if (r.error) return r.error;
+    const where = fmtDateShort(r.when.due) + (r.when.time ? ' at ' + fmtTimeOfDay(r.when.time) : '');
+    return '🔁 Moved "' + r.name + '" to ' + where + '.';
+  }
+  if (type === 'show_clipboard') { openClipboardVault(); return '📋 Opened your clipboard history.'; }
+  if (type === 'show_screenshots') { api.openScreenshotOverlay(); return '📷 Screenshot tool opened — drag to capture.'; }
+  if (type === 'show_stats') { api.openStats(); return '📊 Opened your daily stats.'; }
+  if (type === 'open_settings') { openSettingsPanel(); return '⚙️ Opened Settings.'; }
+  if (type === 'open_notes') { api.openNotesPanel(); return '📝 Opened Quick Notes.'; }
+  if (type === 'set_mode') {
+    const m = String(action.mode || '').toLowerCase();
+    if (m === 'offline' || m === 'online') { settings.assistantMode = m; saveSettings(); updateAssistantModeUI(); broadcastAssistantMode(); return m === 'offline' ? '📴 Offline mode — instant local commands only.' : '🌐 Online mode — AI-first.'; }
+    return null;
+  }
   return null; // none / unknown → use the model reply
+}
+
+// Apply a list of actions (multi-action responses like "plan my day").
+function assistantApplyActions(actions) {
+  if (!Array.isArray(actions)) return null;
+  const replies = [];
+  for (const a of actions) {
+    const r = assistantApplyAction(a);
+    if (r) replies.push(r);
+  }
+  return replies.length ? replies.join('\n') : null;
+}
+
+// Start the focus timer for a task (by name) or a custom session.
+function assistantStartFocus(query, minutes) {
+  const lq = String(query || '').toLowerCase().trim();
+  let t = null;
+  if (lq) {
+    t = tasks.find(x => !x.done && x.name.toLowerCase().includes(lq));
+    if (!t) t = tasks.find(x => x.name.toLowerCase().includes(lq));
+  }
+  if (lq && !t) return 'No task matching "' + query + '" — try "list my tasks".';
+  if (t) openFocusPanel(t.id);
+  else openFocusPanel();
+  if (minutes > 0) {
+    const m = Math.max(1, Math.min(720, Math.round(minutes)));
+    focusTimer.totalMs = m * 60000;
+    focusTimer.remainingMs = focusTimer.totalMs;
+    const minEl = document.getElementById('focus-minutes');
+    if (minEl) minEl.value = m;
+  }
+  startFocus();
+  return '⏱️ Focus started' + (t ? ' for "' + t.name + '"' : '') + ' — ' + fmtFocus(focusTimer.totalMs) + '.';
+}
+
+const DAY_SHORT = { sun: 'Sun', mon: 'Mon', tue: 'Tue', wed: 'Wed', thu: 'Thu', fri: 'Fri', sat: 'Sat' };
+
+// "remember my history class is Monday Wednesday at 9am" → store the class.
+// One message can describe several ("my schedule: history mon wed 9am, math
+// tue thu 10am") — all are saved. A bare name list ("my classes are history,
+// math, bio") is saved too, then the schedule is asked for as a follow-up.
+function assistantRememberClass(q) {
+  const defs = assistantExtractClassDefs(q);
+  if (!defs || !defs.length) return null; // not a class definition — fall through to other handlers
+  const saved = defs.map((d) => rememberClass(d.name, d.days, d.time)).filter(Boolean);
+  if (!saved.length) return null;
+
+  const hasSchedule = (c) => (c.days && c.days.length) || c.time;
+  const withSchedule = saved.filter(hasSchedule);
+  const bare = saved.filter((c) => !hasSchedule(c));
+
+  if (!withSchedule.length) {
+    ASSISTANT_PENDING.q = {
+      mode: 'class-schedule',
+      pending: bare.map((c) => c.name),
+      hint: 'Tell me the schedule, e.g. "history Mon Wed at 9am, math Tue Thu at 10am".',
+    };
+    return '🧠 Saved: ' + bare.map((c) => c.name).join(', ') + '.\nWhat days and times? e.g. "history Mon Wed at 9am, math Tue Thu at 10am"';
+  }
+
+  let r = '🧠 Remembered: ' + withSchedule.map((c) => {
+    let s = c.name + ' class';
+    if (c.days && c.days.length) s += ' · ' + c.days.map((d) => DAY_SHORT[d] || d).join(', ');
+    if (c.time) s += ' · ' + fmtTimeOfDay(c.time);
+    return s;
+  }).join('\n');
+
+  if (bare.length) {
+    ASSISTANT_PENDING.q = {
+      mode: 'class-schedule',
+      pending: bare.map((c) => c.name),
+      hint: 'Tell me the schedule, e.g. "history Mon Wed at 9am, math Tue Thu at 10am".',
+    };
+    r += '\nAlso saved: ' + bare.map((c) => c.name).join(', ') + ' — what days and times?';
+  } else {
+    r += '\nI will auto-date homework for these classes (next class day when you give no date). Say "what classes do I have?" to review.';
+  }
+  return r;
+}
+
+// "what classes do I have?" → list the remembered classes.
+function assistantListClasses() {
+  if (!assistantMemory.classes.length) return 'No classes remembered yet — tell me e.g. "remember my history class is Monday Wednesday at 9am".';
+  const lines = assistantMemory.classes.map((c, i) => {
+    let s = (i + 1) + '. ' + c.name + ' class';
+    if (c.days && c.days.length) s += ' · ' + c.days.map((d) => DAY_SHORT[d] || d).join(', ');
+    if (c.time) s += ' · ' + fmtTimeOfDay(c.time);
+    return s;
+  });
+  return '🧠 Your classes:\n' + lines.join('\n');
+}
+
+// "what's my next class?" / "when is history class?" — answered from memory.
+function assistantNextClass(q) {
+  if (!assistantMemory.classes.length) {
+    return 'No classes remembered yet — tell me your schedule, e.g. "remember my schedule: history Mon Wed 9am".';
+  }
+  const now = new Date();
+  // Specific class: "when is history class?" → its next meeting.
+  const specific = q.match(/when\s+is\s+(?:the\s+|my\s+)?(.+?)\s+class\b/i);
+  if (specific) {
+    const name = assistantCleanName(specific[1]);
+    const cls = assistantMemory.classes.find((c) => c.name.toLowerCase() === name.toLowerCase());
+    if (!cls) return 'I don\'t remember a "' + name + '" class. Say "what classes do I have?" to see them.';
+    return formatNextClass(cls, now);
+  }
+  // "what's my next class?" → the earliest upcoming meeting across all classes.
+  const upcoming = assistantMemory.classes
+    .map((c) => ({ cls: c, dt: nextClassDateTime(c, now) }))
+    .filter((x) => x.dt)
+    .sort((a, b) => a.dt.getTime() - b.dt.getTime());
+  if (!upcoming.length) {
+    return 'Your remembered classes have no days yet — set them in the 🏫 Classes panel or tell me e.g. "history Mon Wed at 9am".';
+  }
+  return formatNextClass(upcoming[0].cls, now, upcoming[0].dt);
+}
+
+function formatNextClass(cls, now, dt) {
+  dt = dt || nextClassDateTime(cls, now);
+  if (!dt) return cls.name + ' class has no schedule yet.';
+  let s = '🏫 ' + (cls.days && cls.days.length ? 'Next ' : '') + cls.name + ' class: ' + fmtDateShort(dayKey(dt));
+  if (cls.time) s += ' at ' + fmtTimeOfDay(cls.time);
+  return s + '.';
+}
+
+// If an item mentions a remembered class, tag its category and (when no date
+// was given) due it on the class's next meeting. Returns { when, category,
+// cls, classDue } — classDue is true when the date was filled from the class.
+function applyClassTo(name, when) {
+  const cls = assistantMatchClass(assistantMemory, name);
+  if (!cls) return { when, category: '', classDue: false };
+  let category = '';
+  const c = categories.find((x) => x.name.toLowerCase() === cls.name.toLowerCase());
+  if (c) category = c.id;
+  let classDue = false;
+  if (!when && cls.days && cls.days.length) {
+    const d = nextClassDate(cls, new Date());
+    if (d) { when = { due: d, time: '', rest: name }; classDue = true; }
+  }
+  return { when, category, cls, classDue };
 }
 
 function assistantAdd(q) {
@@ -1083,33 +1820,45 @@ function assistantAdd(q) {
     }
   }
 
-  const when = assistantExtractWhen(rest);
-  const name = assistantCleanName(when ? when.rest : rest);
+  let when = assistantExtractWhen(rest);
+  let name = assistantCleanName(when ? when.rest : rest);
+  let recur = '';
+  if (name) { const rr = assistantExtractRecur(name); if (rr) { name = rr.rest; recur = rr.recur; } }
   if (!name) {
     return isDeadline
       ? 'What should the deadline be called? Try: "add a test next Thursday at 2pm"'
       : 'What should the task be called? Try: "add task <name> for 2h by Friday 3pm"';
   }
 
+  // Class-aware: a remembered class tags the category and (without a date)
+  // defaults the due date to the class's next meeting.
+  const clsInfo = applyClassTo(name, when);
+  when = clsInfo.when;
+  if (!category && clsInfo.category) category = clsInfo.category;
+
   if (isDeadline) {
-    deadlines.unshift({ id: Date.now(), name, due: when ? when.due : '', time: when ? when.time : '', done: false });
+    const dl = { id: Date.now(), name, due: when ? when.due : '', time: when ? when.time : '', done: false, category };
+    deadlines.unshift(dl);
     saveDeadlines();
     renderDeadlines();
     refreshActiveView();
     tickDeadlineReminders();
+    warnDeadlineConflict(dl);
     let r = '✅ Deadline added: "' + name + '"';
-    if (when) r += ' · ' + fmtDateShort(when.due) + ' at ' + fmtTimeOfDay(when.time);
+    if (when) r += ' · ' + fmtDateShort(when.due) + (when.time ? ' at ' + fmtTimeOfDay(when.time) : '');
+    if (clsInfo.cls && !clsInfo.classDue && !when) r += ' · 🧠 ' + clsInfo.cls.name + ' class (tell me its days to auto-date)';
     r += '. I\'ll remind you 30/20/10/5 min before.';
     return r;
   }
 
-  tasks.unshift({ id: Date.now(), name, due: when ? when.due : '', durationMin, done: false, category, progressMin: 0 });
+  tasks.unshift({ id: Date.now(), name, due: when ? when.due : '', durationMin, done: false, category, recur, progressMin: 0 });
   saveTasks();
   renderTasks();
   refreshActiveView();
   let reply = '✅ Added "' + name + '"';
   if (durationMin) reply += ' · ' + Math.round(durationMin / 60 * 10) / 10 + 'h';
-  if (when) reply += ' · due ' + fmtDateShort(when.due) + ' at ' + fmtTimeOfDay(when.time);
+  if (when) reply += ' · due ' + fmtDateShort(when.due) + (when.time ? ' at ' + fmtTimeOfDay(when.time) : '');
+  if (clsInfo.cls && !clsInfo.classDue && !when) reply += ' · 🧠 ' + clsInfo.cls.name + ' class (tell me its days to auto-date)';
   if (category) {
     const c = categories.find(x => x.id === category);
     if (c) reply += ' · in ' + c.name;
@@ -1137,6 +1886,43 @@ function assistantDelete(q) {
     .replace(/^(?:please\s+)?(?:delete|remove|drop|get\s+rid\s+of)\s+(?:the\s+)?(?:task\s+)?/i, '')
     .trim();
   return assistantPickTask(query, 'delete', null);
+}
+
+// Move the matching task (preferred) or deadline to a new date/time.
+function rescheduleByName(name, when) {
+  const tl = String(name || '').toLowerCase().trim();
+  if (!tl) return { error: 'Which item should I move? (name it)' };
+  const t = tasks.find((x) => !x.done && x.name.toLowerCase().includes(tl))
+         || tasks.find((x) => x.name.toLowerCase().includes(tl));
+  const d = !t
+    ? (deadlines.find((x) => !x.done && x.name.toLowerCase().includes(tl))
+       || deadlines.find((x) => x.name.toLowerCase().includes(tl)))
+    : null;
+  if (!t && !d) return { error: 'No task or deadline matching "' + name + '" — try "list my tasks".' };
+  if (t) {
+    t.due = when.due;
+    saveTasks(); renderTasks(); refreshActiveView();
+    return { moved: 'task', name: t.name, when };
+  }
+  d.due = when.due; d.time = when.time;
+  saveDeadlines(); renderDeadlines(); refreshActiveView(); tickDeadlineReminders(); warnDeadlineConflict(d);
+  return { moved: 'deadline', name: d.name, when };
+}
+
+// "move <name> to <when>" / "reschedule <name> for <when>" / "snooze <name>
+// until <when>" — moves a task or deadline to a new date/time.
+function assistantReschedule(q) {
+  let rest = String(q || '').replace(/^(?:please\s+)?(?:reschedule|move|snooze|postpone|push|bump)\s+(?:the\s+|my\s+|that\s+)?/i, '');
+  const m = rest.match(/^(.*?)\s+(?:to|for|until|till|on|by|at)\s+(.+)$/i);
+  if (!m) return 'Move what, to when? Try: "move <name> to tomorrow 3pm".';
+  const name = assistantCleanName(m[1]);
+  const when = assistantExtractWhen(m[2]);
+  if (!name) return 'Which item should I move? (name it)';
+  if (!when) return 'Move it to when? Try "tomorrow 3pm" or "next Thursday at 2pm".';
+  const r = rescheduleByName(name, when);
+  if (r.error) return r.error;
+  const where = fmtDateShort(r.when.due) + (r.when.time ? ' at ' + fmtTimeOfDay(r.when.time) : '');
+  return '🔁 Moved "' + r.name + '" to ' + where + '.';
 }
 
 function assistantPickTask(query, mode, extra) {
@@ -1179,6 +1965,19 @@ function assistantApply(mode, t, extra) {
   } else if (mode === 'delete') {
     deleteTask(t.id);
     return '🗑 Removed "' + t.name + '".';
+  } else if (mode === 'reopen') {
+    if (!t.done) return '"' + t.name + '" is already open.';
+    reopenTask(t.id);
+    return '🔓 Reopened "' + t.name + '".';
+  } else if (mode === 'progress') {
+    if (t.done) return '"' + t.name + '" is already done — reopen it first.';
+    const mins = (extra && extra.minutes) || 15;
+    const dur = Math.max(1, t.durationMin || 60);
+    t.progressMin = Math.min(dur, (t.progressMin || 0) + mins);
+    recordProgressLog(t.id, mins);
+    saveTasks(); renderTasks(); refreshActiveView();
+    const pct = taskProgressPct(t);
+    return '📈 Logged ' + mins + ' min on "' + t.name + '" — now ' + pct + '% done.';
   }
   return '';
 }
@@ -1192,12 +1991,49 @@ function assistantHandleFollowUp(q) {
     const when = assistantExtractWhen(q);
     if (!when) return null;
     ASSISTANT_PENDING.q = null;
-    deadlines.unshift({ id: Date.now(), name: p.name, due: when.due, time: when.time, done: false });
+    const dl = { id: Date.now(), name: p.name, due: when.due, time: when.time, done: false };
+    deadlines.unshift(dl);
     saveDeadlines();
     renderDeadlines();
     refreshActiveView();
     tickDeadlineReminders();
-    return '✅ Reminder set: "' + p.name + '" · ' + fmtDateShort(when.due) + ' at ' + fmtTimeOfDay(when.time) + '.';
+    warnDeadlineConflict(dl);
+    return '✅ Reminder set: "' + p.name + '" · ' + fmtDateShort(when.due) + (when.time ? ' at ' + fmtTimeOfDay(when.time) : '') + '.';
+  }
+
+  // Schedule answer for classes saved without days/times — parse the reply's
+  // class definitions and attach them to the matching pending classes.
+  if (p.mode === 'class-schedule') {
+    let defs = assistantExtractClassDefs(q);
+    // The answer usually has no "schedule:" introducer — force schedule
+    // context so bare "history Mon Wed at 9am, math Tue Thu at 10am" parses.
+    if (!defs || !defs.length) defs = assistantExtractClassDefs('schedule: ' + q);
+    // A bare schedule with no names ("mon wed at 9am") attaches to the single
+    // pending class.
+    if ((!defs || !defs.length) && p.pending && p.pending.length === 1) {
+      const d = assistantExtractClassDefs('schedule: ' + p.pending[0] + ' ' + q)[0];
+      if (d) defs = [d];
+    }
+    if (!defs || !defs.length) return null; // keep waiting for the schedule
+    const out = [];
+    defs.forEach((d) => {
+      const match = (p.pending || []).find((n) => n.toLowerCase() === d.name.toLowerCase());
+      out.push(rememberClass(match || d.name, d.days, d.time));
+    });
+    const hasSchedule = (c) => (c.days && c.days.length) || c.time;
+    const still = out.filter((c) => !hasSchedule(c));
+    if (still.length) {
+      ASSISTANT_PENDING.q = { mode: 'class-schedule', pending: still.map((c) => c.name), hint: 'Tell me the schedule, e.g. "history Mon Wed at 9am".' };
+    } else {
+      ASSISTANT_PENDING.q = null;
+    }
+    let r = '✅ Updated schedule:\n' + out.map((c) => {
+      let s = c.name + ' · ' + (c.days && c.days.length ? c.days.map((d) => DAY_SHORT[d] || d).join(', ') : 'no days');
+      if (c.time) s += ' · ' + fmtTimeOfDay(c.time);
+      return s;
+    }).join('\n');
+    if (still.length) r += '\nStill need days/times for: ' + still.map((c) => c.name).join(', ') + '.';
+    return r;
   }
 
   if (!p.matches) return null;
@@ -1227,12 +2063,14 @@ function assistantRemind(q) {
   }
   const name = assistantCleanName(when.rest);
   if (!name) return 'Remind you about what? Try: "remind me at 5pm to call mom"';
-  deadlines.unshift({ id: Date.now(), name, due: when.due, time: when.time, done: false });
+  const dl = { id: Date.now(), name, due: when.due, time: when.time, done: false };
+  deadlines.unshift(dl);
   saveDeadlines();
   renderDeadlines();
   refreshActiveView();
   tickDeadlineReminders();
-  return '✅ Reminder set: "' + name + '" · ' + fmtDateShort(when.due) + ' at ' + fmtTimeOfDay(when.time) + '.\nYou\'ll get a heads-up 30/20/10/5 min before.';
+  warnDeadlineConflict(dl);
+  return '✅ Reminder set: "' + name + '" · ' + fmtDateShort(when.due) + (when.time ? ' at ' + fmtTimeOfDay(when.time) : '') + '.\nYou\'ll get a heads-up 30/20/10/5 min before.';
 }
 
 function assistantDue() {
@@ -1272,20 +2110,155 @@ function assistantList() {
   return lines.join('\n');
 }
 
-// "I have a test next Thursday at 2pm" → a deadline with reminders.
+// "how was my week?" — a quick recap of completed items, focus time,
+// deadlines and the streak for the current Mon→Sun week.
+function assistantWeekRecap() {
+  const now = new Date();
+  const start = new Date(now);
+  start.setHours(0, 0, 0, 0);
+  start.setDate(start.getDate() - ((start.getDay() + 6) % 7)); // Monday 00:00
+  const startMs = start.getTime();
+
+  const doneTasks = tasks.filter(t => t.done && (t.completedAt || 0) >= startMs);
+  const doneDls = deadlines.filter(d => d.done && (d.completedAt || 0) >= startMs);
+  const focusMin = focusHistory
+    .filter(s => (s.time || 0) >= startMs)
+    .reduce((a, s) => a + (s.minutes || 0), 0);
+  const weekKey = dayKey(start);
+  const dueThisWeek = deadlines.filter(d => d.due && d.due >= weekKey && d.due <= dayKeyNow());
+  const pending = dueThisWeek.filter(d => !d.done);
+
+  const total = doneTasks.length + doneDls.length;
+  const lines = [
+    '📊 Your week · since ' + start.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }) + ':',
+    '• ✅ ' + total + ' item' + (total === 1 ? '' : 's') + ' completed',
+    '• ⏱️ ' + fmtMin(focusMin) + ' of focused time logged',
+    '• 🔥 streak: ' + (streak.count || 0) + ' day' + (streak.count === 1 ? '' : 's'),
+  ];
+  if (dueThisWeek.length) {
+    const met = dueThisWeek.filter(d => d.done).length;
+    lines.push('• ⏰ ' + met + '/' + dueThisWeek.length + ' deadlines met' + (pending.length ? ' (' + pending.length + ' ahead)' : ' — all done! 🎉'));
+  }
+  if (total === 0 && focusMin === 0) lines.push('\nNothing logged yet this week — a 25-min focus session counts. 🌱');
+  return lines.join('\n');
+}
+
+// "plan my day: gym at 7am; standup 9:30; deep work 10 to 12" — split a list
+// into items; anything with a clock becomes a deadline, the rest become tasks.
+function assistantPlan(raw) {
+  const items = String(raw || '').split(/;\s*|\n|(?:\s+and\s+)/i).map(s => s.trim()).filter(Boolean);
+  if (!items.length) return 'Give me your list, e.g. "plan my day: gym at 7am; standup 9:30; deep work 10 to 12".';
+  let dls = 0, tks = 0;
+  let uid = Date.now();
+  items.forEach(item => {
+    const when = assistantExtractWhen(item);
+    const name = assistantCleanName(when ? when.rest : item);
+    if (!name) return;
+    if (when && when.time) {
+      deadlines.unshift({ id: uid++, name, due: when.due || dayKeyNow(), time: when.time, done: false });
+      dls++;
+    } else {
+      tasks.unshift({ id: uid++, name, due: (when && when.due) || '', durationMin: 0, done: false, recur: '', progressMin: 0 });
+      tks++;
+    }
+  });
+  if (!dls && !tks) return 'I could not find anything to plan there — try "plan my day: gym at 7am; standup 9:30".';
+  saveDeadlines(); saveTasks(); renderDeadlines(); renderTasks(); refreshActiveView(); tickDeadlineReminders();
+  const parts = [];
+  if (dls) parts.push(dls + ' deadline' + (dls === 1 ? '' : 's'));
+  if (tks) parts.push(tks + ' task' + (tks === 1 ? '' : 's'));
+  return '🗓️ Planned ' + parts.join(' + ') + '.';
+}
+
+// "I have a test next Thursday at 2pm" → a deadline with reminders. Without a
+// date, a remembered class fills it in: "I have history homework" → the next
+// History class.
 function assistantEvent(q) {
   const rest = q
     .replace(/(?:i\s+have|i've\s+got|ive\s+got|i\s+got|got|there'?s|there\s+is|we\s+have)\s+(?:a\s+|an\s+|the\s+)?/i, '');
-  const when = assistantExtractWhen(rest);
-  if (!when) return null; // no time mentioned → let other handlers try
-  const name = assistantCleanName(when.rest);
+  const when0 = assistantExtractWhen(rest);
+  const name = assistantCleanName(when0 ? when0.rest : rest);
   if (!name) return null;
-  deadlines.unshift({ id: Date.now(), name, due: when.due, time: when.time, done: false });
+  const clsInfo = applyClassTo(name, when0);
+  const when = clsInfo.when;
+  if (!when) return null; // no date at all → let other handlers try
+  const dl = { id: Date.now(), name, due: when.due, time: when.time, done: false, category: clsInfo.category };
+  deadlines.unshift(dl);
   saveDeadlines();
   renderDeadlines();
   refreshActiveView();
   tickDeadlineReminders();
-  return '✅ Added "' + name + '" as a deadline · ' + fmtDateShort(when.due) + ' at ' + fmtTimeOfDay(when.time) + '.\nI\'ll remind you 30/20/10/5 min before.';
+  warnDeadlineConflict(dl);
+  let r = '✅ Added "' + name + '" as a deadline · ' + fmtDateShort(when.due) + (when.time ? ' at ' + fmtTimeOfDay(when.time) : '');
+  if (clsInfo.cls && clsInfo.classDue) r += ' (next ' + clsInfo.cls.name + ' class)';
+  return r + '.\nI\'ll remind you 30/20/10/5 min before.';
+}
+
+// "I'll work on this deadline now" / "work on <deadline> for 2h" → turn a
+// deadline into a task you do TODAY, keeping the deadline's name and class tag.
+function assistantWorkOnDeadline(q) {
+  const m = q.match(/\b(?:work\s+on|start\s+(?:working\s+on|on)|tackle|get\s+started\s+on|grind\s+on)\s+(.+)$/i);
+  if (!m) return null; // not a "work on …" phrase — let other handlers try
+  let rest = m[1].trim();
+
+  // Time it takes: "for 2h" / "for 30 min" / "in 2 hours".
+  let durationMin = 0;
+  const dur = rest.match(/(?:for|in|lasting|about)\s+(\d+(?:\.\d+)?)\s*(h(?:ours?)?|hrs?|m(?:ins?)?|min(?:utes?)?)\b/i);
+  if (dur) {
+    durationMin = Math.round(parseFloat(dur[1]) * (dur[2][0].toLowerCase() === 'h' ? 60 : 1));
+    rest = rest.replace(dur[0], ' ');
+  }
+  // Trailing time words: "now", "right now", "today".
+  rest = rest.replace(/\b(?:right\s+now|now|today)\b/gi, ' ').replace(/\s+/g, ' ').trim();
+
+  // "this/that deadline" (or nothing left) → the most recent open deadline.
+  let target = null;
+  const bare = /^(?:this|that|it|one)$/i.test(rest);
+  const withNoun = /^(?:this|that|the|my|it)\s+(?:deadline|task|one|assignment|thing)$/i.test(rest);
+  if (!rest || bare || withNoun) {
+    target = deadlines.find((d) => !d.done) || deadlines[0];
+  } else {
+    const lname = assistantCleanName(rest).toLowerCase();
+    target = deadlines.find((d) => !d.done && d.name.toLowerCase().includes(lname))
+          || deadlines.find((d) => d.name.toLowerCase().includes(lname));
+  }
+  if (!target) return 'Which deadline do you want to work on? Say "work on <name> now" or "work on this deadline now".';
+
+  let category = target.category || '';
+  if (!category) {
+    const clsInfo = applyClassTo(target.name, null);
+    if (clsInfo.category) category = clsInfo.category;
+  }
+  tasks.unshift({ id: Date.now(), name: target.name, due: dayKey(new Date()), durationMin: durationMin || 0, done: false, category, recur: '', progressMin: 0 });
+  saveTasks(); renderTasks(); refreshActiveView();
+  let r = '✅ Made "' + target.name + '" a task for today';
+  if (durationMin) r += ' · ' + fmtMin(durationMin);
+  if (category) { const c = categories.find((x) => x.id === category); if (c) r += ' · in ' + c.name; }
+  return r + '. Get after it! 🔥';
+}
+
+// "start the focus timer for X" / "start a 25 minute focus" → focus timer.
+function assistantFocusCommand(q) {
+  let rest = q.replace(/^(?:please\s+)?(?:start|begin|launch|run)\s+(?:a\s+|an\s+|the\s+)?(?:focus|pomodoro)\s+(?:timer|session)?\s*/i, '');
+  // Custom duration: "25 minutes", "25 min", "25m"
+  let minutes = 0;
+  const dur = rest.match(/\b(\d+)\s*(?:min|mins|minutes?)\b/i) || rest.match(/\b(\d+)\s*h(?:ours?|rs?)?\b/i);
+  if (dur) {
+    const n = parseInt(dur[1], 10);
+    minutes = /\bh/i.test(dur[0]) ? n * 60 : n;
+    rest = rest.replace(dur[0], ' ');
+  }
+  const name = assistantCleanName(rest.replace(/^(?:for|on|with)\s+/i, ''));
+  return assistantStartFocus(name, minutes);
+}
+
+// "switch to week view" / "go to calendar" → change the active view.
+function assistantViewCommand(q) {
+  const m = q.match(/\b(tasks|calendar|week)\b/i);
+  if (!m) return null;
+  const v = m[1].toLowerCase();
+  api.setMode(v);
+  return '✅ Switched to ' + v + ' view.';
 }
 
 // "show clipboard" / "show screenshots" → the window renders the history
@@ -1303,9 +2276,23 @@ function assistantClipboard(lq) {
 
 document.getElementById('assistant-close').addEventListener('click', (e) => { e.stopPropagation(); closeAssistantPanel(); });
 document.getElementById('assistant-send').addEventListener('click', (e) => { e.stopPropagation(); assistantSend(); });
+// Enter sends; Shift+Enter inserts a newline (the input is a growing
+// textarea so multi-line messages are possible).
 document.getElementById('assistant-input').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') { e.stopPropagation(); assistantSend(); }
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    e.stopPropagation();
+    assistantSend();
+  }
 });
+// Auto-grow the textarea up to a few lines; Enter keeps sending.
+function autoGrowAssistantInput() {
+  const el = document.getElementById('assistant-input');
+  if (!el) return;
+  el.style.height = 'auto';
+  el.style.height = Math.min(96, el.scrollHeight) + 'px';
+}
+document.getElementById('assistant-input').addEventListener('input', autoGrowAssistantInput);
 document.getElementById('assistant-chips').addEventListener('click', (e) => {
   const chip = e.target.closest('.chip');
   if (!chip) return;
@@ -1313,6 +2300,11 @@ document.getElementById('assistant-chips').addEventListener('click', (e) => {
   const input = document.getElementById('assistant-input');
   input.value = chip.dataset.q || '';
   assistantSend();
+});
+// "Full view" opens the whole workspace (AI + notes + stats + planner + info).
+document.getElementById('assistant-fullview')?.addEventListener('click', (e) => {
+  e.stopPropagation();
+  api.fullView();
 });
 
 // Assistant window (Electron): answer its messages with the same brain.
@@ -1323,56 +2315,210 @@ if (window.electronAPI && window.electronAPI.onAssistantMessage) {
   });
 }
 
+// === Assistant mode (online/offline) sync + slash-command skeleton hint ===
+function broadcastAssistantMode() {
+  if (hasElectron && window.electronAPI && window.electronAPI.sendAssistantMode) {
+    window.electronAPI.sendAssistantMode(settings.assistantMode);
+  }
+}
+if (window.electronAPI && window.electronAPI.onAssistantSetMode) {
+  window.electronAPI.onAssistantSetMode((mode) => {
+    settings.assistantMode = mode === 'offline' ? 'offline' : 'online';
+    saveSettings();
+    updateAssistantModeUI();
+    broadcastAssistantMode();
+  });
+}
+if (window.electronAPI && window.electronAPI.onAssistantGetMode) {
+  window.electronAPI.onAssistantGetMode(() => broadcastAssistantMode());
+}
+// A panel window just opened and wants the current daily-protocol accent.
+if (window.electronAPI && window.electronAPI.onProtocolGet) {
+  window.electronAPI.onProtocolGet(() => broadcastProtocol());
+}
+if (window.electronAPI && window.electronAPI.onConflictResolve) {
+  window.electronAPI.onConflictResolve(({ id }) => {
+    if (!id) return;
+    deadlines = deadlines.filter((d) => d.id !== id);
+    saveDeadlines(); renderDeadlines(); refreshActiveView();
+    showToast('🗑 Removed the new deadline');
+  });
+}
+
+// === Live stats sync to the stats window ===
+// The planner owns the data; push a fresh snapshot to the stats window
+// whenever tasks/deadlines/streak/focus change so the dashboard updates in
+// real time instead of waiting on the old 3s poll.
+function buildStatsPayload() {
+  return {
+    tasks: Array.isArray(tasks) ? tasks : [],
+    deadlines: Array.isArray(deadlines) ? deadlines : [],
+    streak: streak || { last: '', count: 0 },
+    focusHistory: Array.isArray(focusHistory) ? focusHistory : [],
+  };
+}
+function pushStats() {
+  if (hasElectron && window.electronAPI && window.electronAPI.sendStats) {
+    window.electronAPI.sendStats(buildStatsPayload());
+  }
+}
+if (window.electronAPI && window.electronAPI.onStatsRequest) {
+  window.electronAPI.onStatsRequest(() => pushStats());
+}
+
+const SLASH_SKELETONS = {
+  task: ['name', 'date', 'category', 'time', 'duration'],
+  deadline: ['name', 'date', 'time'],
+  complete: ['task name'], done: ['task name'], finish: ['task name'],
+  delete: ['task name'], rm: ['task name'], remove: ['task name'], reopen: ['task name'],
+  progress: ['task name', 'minutes'], log: ['task name', 'minutes'],
+  focus: ['task name?', 'minutes?'], pomodoro: ['task name?', 'minutes?'],
+  view: ['tasks | calendar | week'],
+  plan: ['item; item; …'], schedule: ['item; item; …'],
+  week: ['(weekly recap)'], recap: ['(weekly recap)'], weekly: ['(weekly recap)'],
+  classes: ['(list my classes)'], class: ['(list my classes)'],
+  forget: ['class name'],
+  mode: ['online | offline'],
+};
+function updateAssistantHint() {
+  const hint = document.getElementById('assistant-hint');
+  if (!hint) return;
+  const input = document.getElementById('assistant-input');
+  const v = input ? input.value : '';
+  if (!v || v[0] !== '/') { hint.hidden = true; hint.textContent = ''; return; }
+  const m = v.match(/^\/([a-z]+)/i);
+  const cmd = m ? m[1].toLowerCase() : '';
+  const fields = SLASH_SKELETONS[cmd];
+  if (!fields) { hint.hidden = false; hint.textContent = 'Commands: /task · /deadline · /complete · /delete · /reopen · /progress · /focus · /view · /plan · /week · /classes · /forget · /stats · /list · /due · /help · /mode'; return; }
+  const typed = v.slice(m[0].length);
+  const commas = (typed.match(/,/g) || []).length;
+  const idx = Math.min(commas, fields.length - 1);
+  hint.innerHTML = '';
+  const pre = document.createElement('span'); pre.textContent = '/' + cmd + ' '; pre.style.opacity = '0.55'; hint.appendChild(pre);
+  fields.forEach((f, i) => {
+    if (i > 0) { const c = document.createElement('span'); c.textContent = ', '; c.style.opacity = '0.45'; hint.appendChild(c); }
+    const s = document.createElement('span'); s.textContent = f;
+    if (i === idx) { s.style.color = '#67e8f9'; s.style.fontWeight = '700'; }
+    else { s.style.opacity = '0.5'; }
+    hint.appendChild(s);
+  });
+  hint.hidden = false;
+}
+function updateAssistantModeUI() {
+  const btn = document.getElementById('assistant-mode-toggle');
+  if (btn) btn.textContent = settings.assistantMode === 'offline' ? '📴' : '🌐';
+  updateAssistantHint();
+}
+(function initAssistantModeUI() {
+  document.getElementById('assistant-mode-toggle')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    settings.assistantMode = settings.assistantMode === 'offline' ? 'online' : 'offline';
+    saveSettings();
+    updateAssistantModeUI();
+    broadcastAssistantMode();
+  });
+  document.getElementById('assistant-input')?.addEventListener('input', updateAssistantHint);
+  updateAssistantModeUI();
+})();
+
 // === Quick Notes (browser fallback panel) ===
 function loadNotes() {
   try { return JSON.parse(localStorage.getItem('wolf-notes')) || []; } catch (e) { return []; }
 }
 function saveNotes() { localStorage.setItem('wolf-notes', JSON.stringify(notes)); }
 
+// The note currently open in the textarea (null = composing a fresh note).
+// Persisted (key 'wolf-notes-open') so the last note stays open when the
+// panel is reopened — no need to re-select it.
+let notesOpenId = null;
+let notesSaveTimer = null;
+
+function notesPersistOpen() {
+  try { localStorage.setItem('wolf-notes-open', notesOpenId == null ? '' : String(notesOpenId)); } catch (e) {}
+}
+function notesReadOpen() {
+  try { const v = localStorage.getItem('wolf-notes-open'); return v ? Number(v) : null; } catch (e) { return null; }
+}
+
 function openNotesPanel() {
   notesPanel.classList.remove('panel-hidden');
   infoPopup.classList.add('popup-hidden');
   settingsPanel.classList.add('panel-hidden');
   vaultPanel.classList.add('popup-hidden');
+  // Restore the last-open note (or the most recent one on first ever open).
+  const savedId = notesReadOpen();
+  const initial = notes.find(x => x.id === savedId) || notes[0] || null;
+  notesOpenId = initial ? initial.id : null;
+  const input = document.getElementById('notes-input');
+  if (input) input.value = initial ? initial.text : '';
+  notesPersistOpen();
   renderNotes();
   sendInteractiveBounds();
 }
 
 function closeNotesPanel() {
+  notesFlushSave();
   notesPanel.classList.add('panel-hidden');
   sendInteractiveBounds();
 }
 
-// id of the note being edited (null = composing a brand-new note).
-let notesEditingId = null;
-
-function notesSaveLabel() {
-  const btn = document.getElementById('notes-save');
-  if (btn) btn.textContent = notesEditingId !== null ? 'Update note ✏️' : 'Save note';
-}
-
-function saveCurrentNote() {
+// Autosave: typing updates the open note in place and saves in real time
+// (debounced so localStorage isn't thrashed on every keystroke).
+function notesFlushSave() {
+  clearTimeout(notesSaveTimer);
+  notesSaveTimer = null;
   const input = document.getElementById('notes-input');
+  if (!input) return;
   const text = input.value.trim();
-  if (!text) { showToast('✍️ Write something first'); return; }
-  const wasEditing = notesEditingId !== null;
-  if (wasEditing) {
-    const n = notes.find(x => x.id === notesEditingId);
+  if (!text) {
+    // Empty note: drop the one we were editing (an empty note is useless).
+    if (notesOpenId != null) {
+      notes = notes.filter(x => x.id !== notesOpenId);
+      notesOpenId = null;
+      notesPersistOpen();
+      saveNotes();
+      renderNotes();
+    }
+    return;
+  }
+  if (notesOpenId != null) {
+    const n = notes.find(x => x.id === notesOpenId);
     if (n) { n.text = text; n.time = Date.now(); }
-    notesEditingId = null;
-  } else {
-    notes.unshift({ id: Date.now(), text, time: Date.now() });
+    else notesOpenId = null; // note deleted elsewhere — fall through to create
+  }
+  if (notesOpenId == null) {
+    notesOpenId = Date.now();
+    notes.unshift({ id: notesOpenId, text, time: Date.now() });
     notes = notes.slice(0, 50);
+    notesPersistOpen();
   }
   saveNotes();
-  input.value = '';
-  notesSaveLabel();
   renderNotes();
-  showToast(wasEditing ? 'Note updated 📝' : 'Note saved 📝');
+}
+
+function notesOpenNote(id) {
+  notesOpenId = id;
+  const n = notes.find(x => x.id === id);
+  const input = document.getElementById('notes-input');
+  input.value = n ? n.text : '';
+  notesPersistOpen();
+  renderNotes();
+  input.focus();
+}
+
+function notesNewNote() {
+  notesFlushSave(); // commit anything still pending before starting fresh
+  notesOpenId = null;
+  const input = document.getElementById('notes-input');
+  input.value = '';
+  notesPersistOpen();
+  renderNotes();
+  input.focus();
 }
 
 function renderNotes() {
   const list = document.getElementById('notes-list');
+  const prevScroll = list.scrollTop;
   list.innerHTML = '';
   if (!notes.length) {
     list.innerHTML = '<div class="vault-empty">No notes yet — jot something down!</div>';
@@ -1385,7 +2531,7 @@ function renderNotes() {
     const txt = document.createElement('span');
     txt.className = 'note-text';
     txt.textContent = n.text;
-    txt.title = 'Click to edit';
+    txt.title = 'Click to view';
 
     const meta = document.createElement('span');
     meta.className = 'vault-meta';
@@ -1407,32 +2553,54 @@ function renderNotes() {
     delBtn.addEventListener('click', (ev) => {
       ev.stopPropagation();
       notes = notes.filter(x => x.id !== n.id);
-      if (notesEditingId === n.id) { notesEditingId = null; notesSaveLabel(); }
+      if (notesOpenId === n.id) {
+        notesOpenId = null;
+        const input = document.getElementById('notes-input');
+        if (input) input.value = '';
+        notesPersistOpen();
+      }
       saveNotes();
       renderNotes();
     });
 
     row.append(txt, meta, copyBtn, delBtn);
-    // Click a saved note to edit it in place — loading it into the textarea
-    // and saving updates that same note (no duplicate).
-    row.addEventListener('click', () => {
-      notesEditingId = n.id;
-      const input = document.getElementById('notes-input');
-      input.value = n.text;
-      notesSaveLabel();
-      renderNotes(); // re-highlight the note being edited
-      input.focus();
-    });
-    if (n.id === notesEditingId) row.classList.add('editing');
+    // Click a saved note to open it in the big textarea.
+    row.addEventListener('click', () => notesOpenNote(n.id));
+    if (n.id === notesOpenId) row.classList.add('editing');
     list.appendChild(row);
   });
+  list.scrollTop = Math.min(prevScroll, list.scrollHeight);
 }
 
-document.getElementById('notes-save').addEventListener('click', (e) => { e.stopPropagation(); saveCurrentNote(); });
-document.getElementById('notes-close').addEventListener('click', (e) => { e.stopPropagation(); closeNotesPanel(); });
+// Wire up autosave + the new-note/close buttons once at startup.
+(function bindNotesUI() {
+  const input = document.getElementById('notes-input');
+  const newBtn = document.getElementById('notes-new');
+  const closeBtn = document.getElementById('notes-close');
+  if (input) {
+    input.addEventListener('input', () => {
+      clearTimeout(notesSaveTimer);
+      notesSaveTimer = setTimeout(notesFlushSave, 350);
+    });
+    input.addEventListener('blur', notesFlushSave);
+  }
+  if (newBtn) newBtn.addEventListener('click', (e) => { e.stopPropagation(); notesNewNote(); });
+  if (closeBtn) closeBtn.addEventListener('click', (e) => { e.stopPropagation(); closeNotesPanel(); });
+})();
 
 // === Categories sidebar (slide-in from the left) ===
 const CATEGORY_PALETTE = ['#60a5fa', '#34d399', '#f472b6', '#fbbf24', '#a78bfa', '#fb7185', '#22d3ee', '#f97316'];
+
+// First palette colour not already claimed by an existing category, so every
+// remembered class gets its own distinct accent (cycles only once all 8 are
+// taken). Keeps class tags from colliding with the seeded School/Work colours.
+function unusedPaletteColor() {
+  const used = new Set(categories.map((c) => String(c.color || '').toLowerCase()));
+  for (const color of CATEGORY_PALETTE) {
+    if (!used.has(color.toLowerCase())) return color;
+  }
+  return CATEGORY_PALETTE[categories.length % CATEGORY_PALETTE.length];
+}
 
 function categoryOf(id) { return categories.find(c => c.id === id) || null; }
 
@@ -1542,6 +2710,154 @@ document.getElementById('categories-open').addEventListener('click', (e) => { e.
 document.getElementById('categories-close').addEventListener('click', (e) => { e.stopPropagation(); closeCategoriesPanel(); });
 document.getElementById('categories-add').addEventListener('click', (e) => { e.stopPropagation(); addCategory(); });
 
+// === Classes sidebar (the assistant's remembered schedule — editable here) ===
+const CLASS_DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+const CLASS_DAY_LABELS = { sun: 'S', mon: 'M', tue: 'T', wed: 'W', thu: 'T', fri: 'F', sat: 'S' };
+
+function openClassesPanel() {
+  classesPanel.classList.remove('panel-hidden');
+  renderClasses();
+  sendInteractiveBounds();
+}
+
+function closeClassesPanel() {
+  classesPanel.classList.add('panel-hidden');
+  sendInteractiveBounds();
+}
+
+// The color category that visually tags a class (created on demand).
+function classCategory(cls) {
+  let c = categories.find((x) => x.name.toLowerCase() === cls.name.toLowerCase());
+  if (!c) {
+    c = { id: freshId('cat-'), name: cls.name, color: unusedPaletteColor() };
+    categories.push(c);
+    saveCategories();
+  }
+  return c;
+}
+
+function renderClasses() {
+  const list = document.getElementById('classes-list');
+  list.innerHTML = '';
+  if (!assistantMemory.classes.length) {
+    list.innerHTML = '<div class="cat-empty">No classes yet — tell the assistant “remember my schedule: history Mon Wed 9am” or add one! 🏫</div>';
+    return;
+  }
+  assistantMemory.classes.forEach((cls) => {
+    const cat = classCategory(cls);
+    const row = document.createElement('div');
+    row.className = 'cls-row';
+    row.style.setProperty('--cat-color', cat.color);
+
+    const swatch = document.createElement('input');
+    swatch.type = 'color';
+    swatch.className = 'cat-color-input';
+    swatch.value = cat.color;
+    swatch.title = 'Change color';
+    swatch.addEventListener('change', () => {
+      cat.color = swatch.value;
+      saveCategories();
+      renderClasses();
+      refreshCategoryUI();
+    });
+
+    const name = document.createElement('input');
+    name.type = 'text';
+    name.className = 'cat-name';
+    name.value = cls.name;
+    name.maxLength = 24;
+    name.title = 'Rename';
+    name.addEventListener('change', () => {
+      const v = name.value.trim();
+      if (!v) { name.value = cls.name; return; }
+      cls.name = v;
+      const c2 = categories.find((x) => x.id === cat.id);
+      if (c2) c2.name = v;
+      saveMemory();
+      saveCategories();
+      renderClasses();
+      refreshCategoryUI();
+    });
+
+    const days = document.createElement('div');
+    days.className = 'cls-days';
+    CLASS_DAY_KEYS.forEach((d) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'cls-day' + ((cls.days || []).includes(d) ? ' on' : '');
+      b.textContent = CLASS_DAY_LABELS[d];
+      b.title = DAY_SHORT[d] || d;
+      b.addEventListener('click', () => {
+        const arr = cls.days || (cls.days = []);
+        const i = arr.indexOf(d);
+        if (i >= 0) arr.splice(i, 1); else arr.push(d);
+        arr.sort((a, b2) => CLASS_DAY_KEYS.indexOf(a) - CLASS_DAY_KEYS.indexOf(b2));
+        saveMemory();
+        renderClasses();
+      });
+      days.appendChild(b);
+    });
+
+    const time = document.createElement('input');
+    time.type = 'time';
+    time.className = 'cls-time';
+    time.value = cls.time || '';
+    time.title = 'Start time';
+    time.addEventListener('change', () => {
+      cls.time = /^\d{2}:\d{2}$/.test(time.value) ? time.value : '';
+      saveMemory();
+    });
+
+    const bell = document.createElement('button');
+    bell.type = 'button';
+    bell.className = 'cls-bell' + (cls.remind === false ? ' off' : '');
+    bell.textContent = cls.remind === false ? '🔕' : '🔔';
+    bell.title = cls.remind === false ? 'Class reminders off' : 'Remind me before this class';
+    bell.addEventListener('click', () => {
+      cls.remind = cls.remind === false ? true : false;
+      saveMemory();
+      renderClasses();
+    });
+
+    const del = document.createElement('button');
+    del.className = 'cat-del';
+    del.textContent = '🗑';
+    del.title = 'Delete class';
+    del.addEventListener('click', () => deleteClassRow(cls));
+
+    row.append(swatch, name, days, time, bell, del);
+    list.appendChild(row);
+  });
+}
+
+function addClassRow() {
+  assistantMemory.classes.push({ id: freshId('cls-'), name: 'New class', days: [], time: '', remind: true });
+  saveMemory();
+  renderClasses();
+  const input = document.getElementById('classes-list').querySelector('.cls-row:last-child .cat-name');
+  if (input) { input.focus(); input.select(); }
+}
+
+function deleteClassRow(cls) {
+  assistantMemory.classes = assistantMemory.classes.filter((c) => c !== cls);
+  saveMemory();
+  const cat = categories.find((c) => c.name.toLowerCase() === cls.name.toLowerCase());
+  if (cat) {
+    let changed = false;
+    tasks.forEach((t) => { if (t.category === cat.id) { t.category = ''; changed = true; } });
+    categories = categories.filter((c) => c !== cat);
+    saveCategories();
+    if (changed) saveTasks();
+  }
+  renderClasses();
+  refreshCategoryUI();
+  showToast('🏫 Class deleted');
+}
+
+document.getElementById('classes-open').addEventListener('click', (e) => { e.stopPropagation(); openClassesPanel(); });
+document.getElementById('classes-close').addEventListener('click', (e) => { e.stopPropagation(); closeClassesPanel(); });
+document.getElementById('classes-add').addEventListener('click', (e) => { e.stopPropagation(); addClassRow(); });
+
 // The planner is always visible in the sidebar; these just toggle its glass.
 function showPlanner() {
   tasksPanel.classList.remove('panel-hidden');
@@ -1563,12 +2879,15 @@ function loadTasks() {
     return arr.map(t => Object.assign({ category: '', progressMin: 0 }, t));
   } catch (e) { return []; }
 }
-function saveTasks() { localStorage.setItem('wolf-tasks', JSON.stringify(tasks)); }
+function saveTasks() { localStorage.setItem('wolf-tasks', JSON.stringify(tasks)); pushStats(); }
 
 function loadDeadlines() {
-  try { return JSON.parse(localStorage.getItem('wolf-deadlines')) || []; } catch (e) { return []; }
+  try {
+    const arr = JSON.parse(localStorage.getItem('wolf-deadlines')) || [];
+    return arr.map(d => Object.assign({ category: '' }, d));
+  } catch (e) { return []; }
 }
-function saveDeadlines() { localStorage.setItem('wolf-deadlines', JSON.stringify(deadlines)); }
+function saveDeadlines() { localStorage.setItem('wolf-deadlines', JSON.stringify(deadlines)); pushStats(); }
 
 // === Categories (color-coded task tags, managed from the sidebar) ===
 function loadCategories() {
@@ -1589,13 +2908,139 @@ function loadCategories() {
 }
 function saveCategories() { localStorage.setItem('wolf-categories', JSON.stringify(categories)); }
 
-// Migrate the legacy task shape (estimateMin/workedMin) → durationMin.
+// === Assistant memory (persistent knowledge base) ===
+// The AI keeps track of the user's world: their classes/schedule (so a
+// message like "history homework due tomorrow" resolves against a remembered
+// History class) plus arbitrary facts. Stored in localStorage like every
+// other piece of data the planner owns.
+function loadMemory() {
+  try {
+    const m = JSON.parse(localStorage.getItem(MEMORY_KEY));
+    return {
+      classes: Array.isArray(m && m.classes) ? m.classes : [],
+      facts: Array.isArray(m && m.facts) ? m.facts : [],
+    };
+  } catch (e) { return { classes: [], facts: [] }; }
+}
+function saveMemory() { localStorage.setItem(MEMORY_KEY, JSON.stringify(assistantMemory)); }
+
+// Monotonic unique id — Date.now() alone collides when several classes are
+// saved in the same millisecond (the AI can return many remember_class
+// actions in one response), which made categories share an id and tasks get
+// tagged with the wrong class.
+let uidSeq = 0;
+function freshId(prefix) {
+  uidSeq += 1;
+  return (prefix || '') + Date.now().toString(36) + '-' + uidSeq.toString(36) + Math.random().toString(36).slice(2, 6);
+}
+
+// Store (or update) a remembered class; also creates a color category named
+// after it so its tasks show tagged with the class.
+function rememberClass(name, days, time) {
+  name = assistantCleanName(name || '');
+  // Never store a trailing "class"/"course" word in the name itself.
+  name = name.replace(/\s+(?:class|course|subject)\s*$/i, '').trim();
+  if (!name) return null;
+  const cleanDays = Array.isArray(days)
+    ? days.map((d) => String(d).toLowerCase().slice(0, 3)).filter((d) => /^(sun|mon|tue|wed|thu|fri|sat)$/.test(d))
+    : [];
+  const cleanTime = /^\d{2}:\d{2}$/.test(time || '') ? time : '';
+  const existing = assistantMemory.classes.find((c) => c.name.toLowerCase() === name.toLowerCase());
+  if (existing) { existing.days = cleanDays; existing.time = cleanTime; }
+  else assistantMemory.classes.push({ id: freshId('cls-'), name, days: cleanDays, time: cleanTime });
+  saveMemory();
+  // Color-tag the class so its homework shows under the class color.
+  if (!categories.some((c) => c.name.toLowerCase() === name.toLowerCase())) {
+    categories.push({ id: freshId('cat-'), name, color: unusedPaletteColor() });
+    saveCategories();
+  }
+  return existing || assistantMemory.classes[assistantMemory.classes.length - 1];
+}
+
+// One-time self-heal for data written before ids were made collision-proof:
+// the AI could save several classes in a single response, each with the same
+// Date.now() id, so categories (and the class list) ended up sharing ids and
+// tasks pointed at an ambiguous id. Regenerate unique ids and remap every
+// task to the category whose name actually matches it.
+function repairMemoryIds() {
+  let changed = false;
+
+  // Classes: drop duplicate names, guarantee unique ids.
+  const seenNames = new Set();
+  const seenClassIds = new Set();
+  const classes = [];
+  for (const c of assistantMemory.classes) {
+    const name = String(c.name || '').trim();
+    if (!name || seenNames.has(name.toLowerCase())) { changed = true; continue; }
+    seenNames.add(name.toLowerCase());
+    if (!c.id || seenClassIds.has(c.id)) { c.id = freshId('cls-'); changed = true; }
+    seenClassIds.add(c.id);
+    classes.push(c);
+  }
+  assistantMemory.classes = classes;
+
+  // Categories: drop duplicate names, guarantee unique ids, and remember which
+  // old ids were shared so tasks can be re-pointed at the right one.
+  const catSeenNames = new Set();
+  const idToCats = new Map();
+  for (const c of categories) {
+    if (!idToCats.has(c.id)) idToCats.set(c.id, []);
+    idToCats.get(c.id).push(c);
+  }
+  const newCats = [];
+  for (const c of categories) {
+    const name = String(c.name || '').trim();
+    if (!name || catSeenNames.has(name.toLowerCase())) { changed = true; continue; }
+    catSeenNames.add(name.toLowerCase());
+    const group = idToCats.get(c.id) || [c];
+    if (group.length > 1 || !c.id) { c.id = freshId('cat-'); changed = true; }
+    newCats.push(c);
+  }
+  categories = newCats;
+
+  if (changed) {
+    // Re-point tasks whose category id was shared by several categories (the
+    // AI could also have tagged a task with the wrong shared id entirely —
+    // e.g. "RUSH: Migration Map" pointing at the Calc BC group). Match the
+    // task name against every category so it lands on the right class.
+    tasks.forEach((t) => {
+      if (!t.category) return;
+      const group = idToCats.get(t.category);
+      if (!group || group.length < 2) return; // id wasn't ambiguous — leave it
+      const match = categories.find((c) => t.name.toLowerCase().includes(c.name.toLowerCase()));
+      t.category = match ? match.id : group[0].id;
+    });
+    saveMemory();
+    saveCategories();
+    saveTasks();
+  }
+}
+
+// Remove a remembered class (and its auto-created category).
+function forgetClass(name) {
+  const q = String(name || '').toLowerCase().trim();
+  const cls = assistantMatchClass(assistantMemory, q) || assistantMemory.classes.find((c) => c.name.toLowerCase() === q);
+  if (!cls) return 'No remembered class matching "' + name + '" — say /classes to see them.';
+  assistantMemory.classes = assistantMemory.classes.filter((c) => c !== cls);
+  saveMemory();
+  // Drop the auto-created category too (only if it was never manually used).
+  const cat = categories.find((c) => c.name.toLowerCase() === cls.name.toLowerCase());
+  if (cat && !tasks.some((t) => t.category === cat.id)) {
+    categories = categories.filter((c) => c !== cat);
+    saveCategories();
+  }
+  return '🧠 Forgot the ' + cls.name + ' class.';
+}
+
+// Names the old assistant parser used to mangle ("daily task called X").
+const MANGLED_NAME = /^(?:(?:the|a|an|my)\s+)?(?:(?:daily|recurring|quick|new|another)\s+)?task\s+(?:called|named|titled)\b/i;
+
+// Migrate the legacy task shape (estimateMin/workedMin) → durationMin, clamp
+// sub-minute estimates to "no duration", and repair names the old parser mangled.
 function migrateTasks() {
   let changed = false;
   tasks = tasks.map(t => {
-    if (typeof t.durationMin === 'number') return t;
-    changed = true;
-    return {
+    let out = typeof t.durationMin === 'number' ? { ...t } : {
       id: t.id,
       name: t.name,
       due: t.due || '',
@@ -1604,6 +3049,20 @@ function migrateTasks() {
       completedAt: t.done ? Date.now() : undefined,
       progressMin: 0,
     };
+    if (out !== t) changed = true;
+    // Sub-minute estimates (0.4 etc. from old code) read as "no duration".
+    if (typeof out.durationMin === 'number') {
+      const rounded = Math.round(out.durationMin);
+      if (rounded < 1 && out.durationMin !== 0) { out.durationMin = 0; changed = true; }
+      else if (rounded !== out.durationMin) { out.durationMin = rounded; changed = true; }
+    }
+    // Repair mangled names only when they start with task filler, so legit
+    // names like "task force notes" or "Pickleball under workout" are kept.
+    if (MANGLED_NAME.test(out.name || '')) {
+      const repaired = assistantCleanName(out.name);
+      if (repaired !== out.name) { out.name = repaired; changed = true; }
+    }
+    return out;
   });
   if (changed) saveTasks();
 }
@@ -1648,6 +3107,35 @@ const fmtTimeOfDay = (time) => {
   const d = new Date('2000-01-01T' + time);
   return isNaN(d) ? time : d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 };
+
+// === Schedule conflict detection ===
+// Deadlines are points in time; two on the same day within this window are
+// treated as an overlap and raise a persistent on-screen warning.
+const CONFLICT_WINDOW_MIN = 30;
+function timeToMin(time) {
+  const m = String(time || '').match(/^(\d{1,2}):(\d{2})$/);
+  return m ? parseInt(m[1], 10) * 60 + parseInt(m[2], 10) : null;
+}
+function warnDeadlineConflict(dl) {
+  if (!dl || !dl.due || !dl.time) return;
+  const mine = timeToMin(dl.time);
+  if (mine === null) return;
+  const windowMin = settings.conflictWindowMin != null ? settings.conflictWindowMin : CONFLICT_WINDOW_MIN;
+  const clashes = deadlines.filter((d) => {
+    if (d.done || d.id === dl.id || d.due !== dl.due || !d.time) return false;
+    const t = timeToMin(d.time);
+    return t !== null && Math.abs(t - mine) < windowMin;
+  });
+  if (!clashes.length) return;
+  const detail = clashes.map((d) => '"' + d.name + '" at ' + fmtTimeOfDay(d.time)).join(', ');
+  api.showDeadlineAlert({
+    id: 'conflict-' + dl.id,
+    kind: 'conflict',
+    newId: dl.id,
+    name: '"' + dl.name + '" overlaps',
+    time: 'Also at ' + fmtTimeOfDay(dl.time) + ': ' + detail,
+  });
+}
 
 // How far back past days stay viewable (calendar / week / past-day views show
 // their items crossed out as completed). Items whose day falls outside this
@@ -1713,13 +3201,26 @@ function renderDeadlines() {
     list.innerHTML = '<div class="section-empty">No deadlines yet — add one! ⏰</div>';
     return;
   }
-  // Closest to the deadline first (overdue = closest); finished deadlines
-  // keep the spot they were in (they don't sink to the bottom).
+  // Open deadlines first (soonest on top); finished ones sink to the bottom
+  // under a single "Done" divider. Each day is separated so due dates stay
+  // scannable at a glance.
   const sorted = [...visible].sort((a, b) => {
+    if (!!a.done !== !!b.done) return a.done ? 1 : -1;
     const d = dueTs(a) - dueTs(b);
     return d !== 0 ? d : a.name.localeCompare(b.name);
   });
-  sorted.forEach(dl => list.appendChild(buildDeadlineRow(dl)));
+  let lastDay = null;
+  let doneDividerShown = false;
+  sorted.forEach(dl => {
+    const key = dl.due || '';
+    if (!dl.done) {
+      if (key && key !== lastDay) { list.appendChild(buildDayDivider(key)); lastDay = key; }
+    } else if (!doneDividerShown) {
+      list.appendChild(buildLabelDivider('✓ Done'));
+      doneDividerShown = true;
+    }
+    list.appendChild(buildDeadlineRow(dl));
+  });
   list.scrollTop = Math.min(prevScroll, list.scrollHeight);
 }
 
@@ -1750,6 +3251,13 @@ function buildDeadlineRow(dl, opts = {}) {
   const row = document.createElement('div');
   row.className = 'item-row' + (done ? ' done' : '') + (past ? ' past-day' : '');
   wireRowHover(row, dl, 'deadline');
+  // Class/category accent: colored left border + a small glowing tag, so a
+  // homework deadline shows which class it belongs to at a glance.
+  const cat = categoryOf(dl.category);
+  if (cat) {
+    row.classList.add('has-cat');
+    row.style.setProperty('--cat-color', cat.color);
+  }
   const check = document.createElement('button');
   check.className = 'item-check';
   check.textContent = done ? '✓' : '';
@@ -1770,7 +3278,17 @@ function buildDeadlineRow(dl, opts = {}) {
   const dueEl = document.createElement('span');
   dueEl.className = 'due-chip' + (done ? ' done' : due.cls ? ' ' + due.cls : '');
   dueEl.textContent = done ? 'Done' : (due.text || '—');
-  row.append(check, name, chip, dueEl);
+  const kids = [check];
+  if (cat) {
+    const tag = document.createElement('span');
+    tag.className = 'cat-tag';
+    tag.style.setProperty('--tag-color', cat.color || '#a5b4fc');
+    tag.textContent = cat.name;
+    tag.title = cat.name;
+    kids.push(tag);
+  }
+  kids.push(name, chip, dueEl);
+  row.append(...kids);
   if (!historic) {
     const edit = document.createElement('button');
     edit.className = 'item-act'; edit.textContent = '✎'; edit.title = 'Edit deadline';
@@ -1822,8 +3340,22 @@ function renderTasks() {
   const prevScroll = list.scrollTop;
   list.innerHTML = '';
   const todayStart = todayStartMs();
-  const windowStart = todayStart - taskFilter * 86400000;
-  const windowEnd = todayStart + taskFilter * 86400000;
+  // Filter windows — taskFilter is the chip value: 0 = today only,
+  // 3 = today + the next two days, 7 = the current week (Mon–Sun).
+  // No past days are pulled in, so "3 Days" shows only today/tomorrow/the
+  // day after (a task from yesterday no longer lingers crossed out).
+  let windowStart, windowEnd;
+  if (taskFilter === 0) {
+    windowStart = todayStart;
+    windowEnd = todayStart + 86400000 - 1;
+  } else if (taskFilter === 3) {
+    windowStart = todayStart;
+    windowEnd = todayStart + 3 * 86400000 - 1;
+  } else { // 7 — Monday 00:00 through Sunday 23:59:59 of this week
+    const dow = new Date(todayStart).getDay(); // 0 = Sun … 6 = Sat
+    windowStart = todayStart - ((dow + 6) % 7) * 86400000;
+    windowEnd = windowStart + 7 * 86400000 - 1;
+  }
   // True when a task's day has already passed (works for YYYY-MM-DD keys AND
   // legacy formats like '8/6/2026'; empty/undated keys are never "past").
   const isPastDay = (key) => {
@@ -1853,20 +3385,27 @@ function renderTasks() {
     return;
   }
   // Soonest day first; within a day the longer tasks sit on top. Finished
-  // tasks keep their sorted spot (they don't sink to the bottom).
+  // tasks sink to the bottom under a single "Done" divider.
   const sorted = [...visible].sort((a, b) => {
+    if (!!a.done !== !!b.done) return a.done ? 1 : -1;
     const da = a.due || '9999-99-99', db = b.due || '9999-99-99';
     if (da !== db) return da < db ? -1 : 1;
     return (b.durationMin || 0) - (a.durationMin || 0);
   });
-  // Faint dividing line between each day; past days show their items crossed
-  // out (completed) instead of an "Overdue" label.
+  // Faint dividing line between each day (open tasks); finished tasks group
+  // under one "Done" divider. Past days show their items crossed out.
   let lastDay = null;
+  let doneDividerShown = false;
   sorted.forEach(t => {
     const key = t.due || '';
-    if (key && key !== lastDay) {
-      list.appendChild(buildDayDivider(key));
-      lastDay = key;
+    if (!t.done) {
+      if (key && key !== lastDay) {
+        list.appendChild(buildDayDivider(key));
+        lastDay = key;
+      }
+    } else if (!doneDividerShown) {
+      list.appendChild(buildLabelDivider('✓ Done'));
+      doneDividerShown = true;
     }
     list.appendChild(buildTaskRow(t, { past: isPastDay(key) }));
   });
@@ -1934,15 +3473,19 @@ function updateLiveProgressBars() {
   renderDailyProgress();
 }
 
-// Faint per-day divider label for the 3-day / 1-week task views.
-function buildDayDivider(key) {
+// Faint divider label (day names, or "Done" for the completed block).
+function buildLabelDivider(text) {
   const div = document.createElement('div');
   div.className = 'day-divider';
   const label = document.createElement('span');
   label.className = 'day-divider-label';
-  label.textContent = dayLabel(key);
+  label.textContent = text;
   div.appendChild(label);
   return div;
+}
+// Faint per-day divider label for the 3-day / 1-week task views.
+function buildDayDivider(key) {
+  return buildLabelDivider(dayLabel(key));
 }
 
 function dayLabel(key) {
@@ -2021,17 +3564,20 @@ function buildTaskRow(t, opts = {}) {
     if (t.done) reopenTask(t.id); else completeTask(t.id);
   });
   const name = document.createElement('span');
-  name.className = 'item-name'; name.textContent = t.name; name.title = t.name;
+  name.className = 'item-name'; name.textContent = t.name + (t.recur ? ' ♻️' : ''); name.title = t.name;
   const chip = document.createElement('span');
   chip.className = 'item-chip';
-  chip.textContent = fmtDateShort(t.due) + ' · ' + fmtMin(t.durationMin);
+  chip.textContent = fmtDateShort(t.due) + (Math.round(t.durationMin || 0) >= 1 ? ' · ' + fmtMin(t.durationMin) : '');
   const kids = [check];
   if (cat) {
-    const dot = document.createElement('span');
-    dot.className = 'cat-dot';
-    dot.style.background = cat.color;
-    dot.title = cat.name;
-    kids.push(dot);
+    // Small colored tag with the class/category name, so homework shows which
+    // class it belongs to at a glance.
+    const tag = document.createElement('span');
+    tag.className = 'cat-tag';
+    tag.style.setProperty('--tag-color', cat.color || '#a5b4fc');
+    tag.textContent = cat.name;
+    tag.title = cat.name;
+    kids.push(tag);
   }
   kids.push(name, chip);
   if (!historic) {
@@ -2149,7 +3695,9 @@ function commitProgressPopover() {
   hideProgressPopover();
   if (!t || t.done) return;
   const dur = Math.max(1, t.durationMin || 60);
+  const delta = minutes - Math.round(t.progressMin || 0);
   t.progressMin = Math.min(dur, Math.max(0, minutes));
+  if (delta > 0) recordProgressLog(t.id, delta);
   saveTasks();
   if (t.progressMin >= dur) {
     // Slider hit the full duration → auto-complete the task.
@@ -2205,9 +3753,9 @@ function wireRowHover(row, item, kind) {
   };
   row.addEventListener('mouseenter', () => {
     if (timer) clearTimeout(timer);
-    // A ~0.9s rest is enough to signal intent without feeling slow; faster
-    // than the old 2s, so the preview card reads as a responsive assistant.
-    timer = setTimeout(show, 900);
+    // A short rest signals intent; ~0.65s keeps the preview card feeling
+    // instant without firing on every passing flick of the cursor.
+    timer = setTimeout(show, 650);
   });
   row.addEventListener('mouseleave', hide);
   row.addEventListener('click', hide);
@@ -2217,13 +3765,14 @@ function wireRowHover(row, item, kind) {
 function hoverPayload(item, kind) {
   if (kind === 'deadline') {
     const d = parseDateKey(item.due);
+    const cat = categoryOf(item.category);
     return {
       kind: 'deadline',
       name: item.name,
       date: d ? d.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' }) : 'No date',
       time: fmtTimeOfDay(item.time) || '—',
       duration: null,
-      category: null,
+      category: cat ? cat.name : null,
       status: item.done ? 'Done' : (dueTs(item) < Date.now() ? 'Overdue' : 'Pending'),
     };
   }
@@ -2308,6 +3857,12 @@ function completeTask(id) {
   renderTasks();
   refreshActiveView();
   bumpStreak(); // finishing any task counts toward today's streak
+  if (t.recur) {
+    const nextDue = nextRecurDate(t.recur);
+    tasks.unshift({ id: Date.now(), name: t.name, due: nextDue, durationMin: t.durationMin, done: false, category: t.category, recur: t.recur, progressMin: 0 });
+    saveTasks(); renderTasks(); refreshActiveView();
+    showToast('♻️ Next "' + t.name + '" scheduled' + (nextDue ? ' · ' + fmtDateShort(nextDue) : ''));
+  }
   showToast('🎉 "' + t.name + '" done!');
 }
 function reopenTask(id) {
@@ -2354,7 +3909,10 @@ function openItemModal(mode, id) {
     if (mode === 'deadline') {
       const parts = (existing.time || '09:00').split(':');
       const h24 = parseInt(parts[0], 10) || 0;
-      tmMins = parseInt(parts[1], 10) || 0;
+      // Round to the wheel's 5-minute step so a stored time like "9:07" (the
+      // AI accepts any minute) lands on the closest notch instead of opening
+      // on the wrong value.
+      tmMins = Math.min(55, Math.round((parseInt(parts[1], 10) || 0) / 5) * 5);
       // 24h (stored) -> 12h + AM/PM (picker)
       tmAmPm = h24 < 12 ? 'AM' : 'PM';
       tmHours = h24 % 12 || 12;
@@ -2424,17 +3982,20 @@ function saveItemModal() {
     // 12h + AM/PM (picker) -> 24h "HH:MM" (stored). 12 AM = 00, 12 PM = 12.
     const h24 = (tmHours % 12) + (tmAmPm === 'PM' ? 12 : 0);
     const time = pad2(h24) + ':' + pad2(tmMins);
+    let dl;
     if (imEditId) {
-      const dl = deadlines.find(x => x.id === imEditId);
+      dl = deadlines.find(x => x.id === imEditId);
       if (dl) { dl.name = name; dl.due = due; dl.time = time; }
     } else {
-      deadlines.unshift({ id: Date.now(), name, due, time, done: false });
+      dl = { id: Date.now(), name, due, time, done: false };
+      deadlines.unshift(dl);
     }
     saveDeadlines();
     renderDeadlines();
     refreshActiveView();
     showToast(imEditId ? '✏️ Deadline updated' : '✅ Deadline added');
     tickDeadlineReminders(); // re-arm reminders for the newly saved deadline
+    warnDeadlineConflict(dl);
   } else {
     const durationMin = tmHours * 60 + tmMins;
     if (durationMin < 1) { showToast('⏱ Add a time estimate'); return; }
@@ -2639,46 +4200,101 @@ function buildWheel(wrapEl, values, selected, onChange) {
   const list = wrapEl.querySelector('.tm-wheel-list');
   const ITEM_H = 34;
   const fmt = (v) => (typeof v === 'number' ? String(v).padStart(2, '0') : String(v));
-  const items = values.map((v) =>
-    '<div class="tm-wheel-item' + (v === selected ? ' sel' : '') + '" data-v="' + fmt(v) + '">' + fmt(v) + '</div>'
+
+  // Snap `selected` to the NEAREST value rather than `indexOf` (which returns
+  // -1 for a non-step value like a deadline saved at "9:07"), so the wheel
+  // opens on the closest notch instead of silently landing on 00:00.
+  let selIdx = values.indexOf(selected);
+  if (selIdx < 0) {
+    let best = 0, bestDist = Infinity;
+    values.forEach((v, k) => {
+      const dist = typeof v === 'number' && typeof selected === 'number'
+        ? Math.abs(v - selected) : Number.MAX_SAFE_INTEGER;
+      if (dist < bestDist) { bestDist = dist; best = k; }
+    });
+    selIdx = best;
+  }
+
+  const items = values.map((v, k) =>
+    '<div class="tm-wheel-item' + (k === selIdx ? ' sel' : '') + '" data-v="' + fmt(v) + '">' + fmt(v) + '</div>'
   ).join('');
   list.innerHTML = '<div class="tm-wheel-pad"></div>' + items + '<div class="tm-wheel-pad"></div>';
-  const selIdx = values.indexOf(selected);
-  const maxScroll = Math.max(0, list.scrollHeight - list.clientHeight);
-  // Initial position lands instantly (behavior 'auto' overrides the CSS
-  // scroll-behavior:smooth) so opening the modal never glides from 00.
-  list.scrollTo({ top: Math.max(0, Math.min(maxScroll, selIdx * ITEM_H)), behavior: 'auto' });
+  const maxScroll = () => Math.max(0, list.scrollHeight - list.clientHeight);
+  const targetTop = (idx) => Math.max(0, Math.min(maxScroll(), idx * ITEM_H));
+
+  // Re-center after layout settles — the modal may still be laying out when
+  // buildWheel runs, so scrollHeight/clientHeight can briefly read 0 and the
+  // wheel would open on 00:00 instead of the selected value. Multiple passes
+  // (immediate + rAF + timer) guarantee the wheel opens on the right value.
+  list.scrollTop = targetTop(selIdx);
+  requestAnimationFrame(() => { list.scrollTop = targetTop(selIdx); });
+  setTimeout(() => { list.scrollTop = targetTop(selIdx); }, 70);
+
+  // Settle the selection only after scrolling stops — reading scrollTop on
+  // every frame mid-glide made the highlight flicker onto neighbouring values.
   const apply = () => {
     const idx = Math.max(0, Math.min(values.length - 1, Math.round(list.scrollTop / ITEM_H)));
     onChange(values[idx]);
     list.querySelectorAll('.tm-wheel-item').forEach((el, k) => el.classList.toggle('sel', k === idx));
   };
+  let applyTimer = null;
+  const scheduleApply = () => {
+    if (applyTimer) clearTimeout(applyTimer);
+    applyTimer = setTimeout(apply, 70);
+  };
   // The modal is rebuilt on every open, so these listeners MUST be rebound
   // from scratch each time — otherwise scroll/click handlers stack up on the
   // persistent wheel element and fire dozens of times per interaction.
   if (list._wheelApply) list.removeEventListener('scroll', list._wheelApply);
-  list._wheelApply = apply;
-  list.addEventListener('scroll', apply, { passive: true });
+  list._wheelApply = scheduleApply;
+  list.addEventListener('scroll', scheduleApply, { passive: true });
+
+  // Glide one value and lock the highlight now (the smooth scroll keeps the
+  // selection in sync; snap alignment below guarantees it settles exactly).
+  const glideTo = (idx) => {
+    idx = Math.max(0, Math.min(values.length - 1, idx));
+    list.scrollTo({ top: targetTop(idx), behavior: 'smooth' });
+    onChange(values[idx]);
+    list.querySelectorAll('.tm-wheel-item').forEach((el, k) => el.classList.toggle('sel', k === idx));
+  };
+
+  // Slower, controlled wheel: one item per paced step. Native wheel scrolled
+  // the list far too fast and fought the snap — this feels deliberate.
+  if (list._wheelHandler) list.removeEventListener('wheel', list._wheelHandler);
+  list._wheelHandler = (e) => {
+    e.preventDefault();
+    const now = Date.now();
+    if (now - (list._lastWheel || 0) < 150) return; // pace: one step per 150ms
+    list._lastWheel = now;
+    const cur = Math.max(0, Math.min(values.length - 1, Math.round(list.scrollTop / ITEM_H)));
+    glideTo(cur + (e.deltaY > 0 ? 1 : -1));
+  };
+  list.addEventListener('wheel', list._wheelHandler, { passive: false });
+
   if (list._wheelClick) list.removeEventListener('click', list._wheelClick);
   list._wheelClick = (e) => {
     const it = e.target.closest('.tm-wheel-item');
     if (!it) return;
     const v = values.find((x) => fmt(x) === it.dataset.v);
     if (v === undefined) return;
-    // Glide to the picked value — the wheel turns smoothly instead of snapping.
-    list.scrollTo({ top: Math.max(0, Math.min(maxScroll, values.indexOf(v) * ITEM_H)), behavior: 'smooth' });
+    glideTo(values.indexOf(v));
   };
   list.addEventListener('click', list._wheelClick);
+
   wrapEl.querySelectorAll('.tm-wheel-btn').forEach((btn) => {
     if (btn._wheelBtn) btn.removeEventListener('click', btn._wheelBtn);
     btn._wheelBtn = () => {
       const dir = parseInt(btn.dataset.dir, 10);
-      // Smooth one-step nudge from the current position (no snap-jump).
-      list.scrollTo({ top: Math.max(0, Math.min(maxScroll, list.scrollTop + dir * ITEM_H)), behavior: 'smooth' });
+      const cur = Math.max(0, Math.min(values.length - 1, Math.round(list.scrollTop / ITEM_H)));
+      glideTo(cur + dir);
     };
     btn.addEventListener('click', btn._wheelBtn);
   });
-  apply();
+
+  // Normalize the live value to the nearest notch once (independent of a
+  // scrollTop that may not have settled yet), so a non-step stored value is
+  // corrected immediately even if the user saves without touching the wheel.
+  onChange(values[selIdx]);
 }
 
 // === Planner UI wiring ===
@@ -2825,6 +4441,36 @@ function tickDeadlineReminders() {
   if (changed) saveReminderState(reminderState);
 }
 
+// === Class reminders: heads-up before a remembered class starts ===
+// One toast per class per day ("🏫 History starts in 12 min"), persisted so
+// restarts don't re-fire. Only classes with days + a start time and the bell
+// enabled (remind !== false) participate.
+let classReminderState = loadClassReminderState();
+function loadClassReminderState() {
+  try { return JSON.parse(localStorage.getItem('wolf-class-reminders')) || {}; } catch (e) { return {}; }
+}
+function saveClassReminderState(s) { localStorage.setItem('wolf-class-reminders', JSON.stringify(s)); }
+
+function tickClassReminders() {
+  const now = new Date();
+  let changed = false;
+  assistantMemory.classes.forEach((cls) => {
+    if (cls.remind === false || !cls.time || !cls.days || !cls.days.length) return;
+    const start = nextClassDateTime(cls, now);
+    if (!start || dayKey(start) !== dayKey(now)) return; // not a class day today
+    const mins = Math.round((start.getTime() - now.getTime()) / 60000);
+    const key = cls.id + '|' + dayKey(now);
+    if (classReminderState[key]) return; // already reminded today
+    if (mins >= 0 && mins <= 15) {
+      classReminderState[key] = true;
+      changed = true;
+      const label = mins <= 1 ? 'starts now' : 'starts in ' + mins + ' min';
+      showToast('🏫 ' + cls.name + ' class ' + label + ' — get ready!', 'toast-alert', 4000);
+    }
+  });
+  if (changed) saveClassReminderState(classReminderState);
+}
+
 // === Daily streak (consecutive days with at least one completed item) ===
 // State: { last, count } — last = day key of the most recent counted day.
 function loadStreak() {
@@ -2845,6 +4491,7 @@ function validateStreak() {
     streak.last = '';
     streak.count = 0;
     localStorage.setItem('wolf-streak', JSON.stringify(streak));
+    pushStats();
   }
 }
 
@@ -2856,6 +4503,7 @@ function bumpStreak() {
   streak.count = (streak.last === dayKey(y)) ? (streak.count || 0) + 1 : 1;
   streak.last = today;
   localStorage.setItem('wolf-streak', JSON.stringify(streak));
+  pushStats();
   renderStreak();
 }
 
@@ -2940,6 +4588,7 @@ function loadFocusHistory() {
 }
 function saveFocusHistory() {
   localStorage.setItem(FOCUS_HISTORY_KEY, JSON.stringify(focusHistory));
+  pushStats();
 }
 function recordFocusSession(taskId, minutes) {
   if (!minutes || minutes < 0.5) return;
@@ -2950,6 +4599,24 @@ function recordFocusSession(taskId, minutes) {
     name: t ? t.name : 'Custom session',
     minutes: Math.round(minutes),
     time: Date.now(),
+    kind: 'focus',
+  });
+  focusHistory = focusHistory.slice(0, MAX_HISTORY);
+  saveFocusHistory();
+}
+
+// "Mark progress" also lands in the same history (tagged kind:'progress') so
+// the stats dashboard's Progress tile + activity graph reflect it per-day.
+function recordProgressLog(taskId, minutes) {
+  if (!minutes || minutes < 0.5) return;
+  const t = tasks.find((x) => String(x.id) === String(taskId));
+  focusHistory.unshift({
+    id: Date.now() + Math.random(),
+    taskId: taskId || '',
+    name: t ? t.name : 'Task',
+    minutes: Math.round(minutes),
+    time: Date.now(),
+    kind: 'progress',
   });
   focusHistory = focusHistory.slice(0, MAX_HISTORY);
   saveFocusHistory();

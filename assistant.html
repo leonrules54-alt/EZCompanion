@@ -33,16 +33,17 @@
     display: flex;
     flex-direction: column;
     border-radius: 18px;
-    background: var(--glass-bg);
-    backdrop-filter: blur(16px) saturate(1.3) brightness(1.05);
-    -webkit-backdrop-filter: blur(16px) saturate(1.3) brightness(1.05);
-    border: 2px solid rgba(167, 139, 250, 0.45);
-    border-top: 1.5px solid rgba(255, 255, 255, 0.5);
+    background: rgba(13, 17, 23, 0.88);
+    backdrop-filter: blur(16px) saturate(1.35) brightness(1.05);
+    -webkit-backdrop-filter: blur(16px) saturate(1.35) brightness(1.05);
+    border: 1px solid rgba(var(--accent), 0.25);
+    border-top: 1px solid rgba(255, 255, 255, 0.45);
     box-shadow:
-      0 14px 48px rgba(0, 0, 0, 0.5),
-      0 0 0 1.5px rgba(167, 139, 250, 0.28),
-      0 0 26px rgba(139, 92, 246, 0.18),
-      inset 0 1px 0 rgba(255, 255, 255, 0.16);
+      inset 0 0 12px rgba(var(--accent), 0.08),
+      inset 0 1px 0 rgba(255, 255, 255, 0.18),
+      0 14px 48px rgba(0, 0, 0, 0.55),
+      0 0 0 1px rgba(var(--accent), 0.12),
+      0 0 30px rgba(var(--accent), 0.10);
     overflow: hidden;
   }
 
@@ -54,7 +55,9 @@
     padding: 13px 14px 11px;
     border-bottom: 1.5px solid rgba(167, 139, 250, 0.6);
     flex-shrink: 0;
+    -webkit-app-region: drag; /* drag the frameless window by its header */
   }
+  .head .close, .head .mode-toggle, .head .fullview { -webkit-app-region: no-drag; }
   .head .title {
     flex: 1;
     font-size: 14px;
@@ -86,6 +89,55 @@
     transition: background 0.15s, color 0.15s;
   }
   .close:hover { background: rgba(244, 63, 94, 0.75); color: #fff; }
+  .logo {
+    font-size: 22px;
+    line-height: 1;
+    filter: drop-shadow(0 0 7px rgba(232, 121, 249, 0.65));
+  }
+  .mode-toggle {
+    width: 27px;
+    height: 27px;
+    border-radius: 50%;
+    border: 1.5px solid rgba(255, 255, 255, 0.3);
+    background: rgba(255, 255, 255, 0.09);
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .mode-toggle:hover { background: rgba(139, 92, 246, 0.32); border-color: rgba(167, 139, 250, 0.85); }
+  .fullview {
+    height: 27px;
+    padding: 0 11px;
+    border-radius: 999px;
+    border: none;
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    color: #0b1220;
+    cursor: pointer;
+    background: linear-gradient(135deg, #a3e635, #22d3ee);
+    box-shadow: 0 0 14px rgba(163, 230, 53, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .fullview:hover { transform: scale(1.06); box-shadow: 0 0 22px rgba(34, 211, 238, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.5); }
+  .fullview:active { transform: scale(0.95); }
+  .hint {
+    margin: 0 12px 6px;
+    padding: 5px 9px;
+    border-radius: 9px;
+    font-size: 10.5px;
+    color: #cbd5e1;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px dashed rgba(148, 163, 255, 0.4);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 
   /* Messages */
   .msgs {
@@ -209,12 +261,16 @@
     min-width: 0;
     font-family: inherit;
     font-size: 12px;
+    line-height: 1.45;
     color: var(--text-main);
     background: var(--surface-input);
     border: 1.5px solid var(--hairline-strong);
     border-radius: 11px;
     padding: 9px 11px;
     outline: none;
+    resize: none;
+    overflow: hidden;
+    max-height: 96px;
     transition: border-color 0.15s, box-shadow 0.15s;
   }
   #asst-input:focus {
@@ -237,27 +293,70 @@
   }
   #asst-send:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(139, 92, 246, 0.5); }
   #asst-send:active { transform: scale(0.95); }
-</style>
+  /* Lightweight entrance (transform + opacity only — compositor-safe) */
+  #assistant-glass { animation: winIn 0.24s cubic-bezier(0.22, 0.61, 0.36, 1) both; }
+  @keyframes winIn { from { opacity: 0; transform: translateY(8px) scale(0.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
+    /* Planner-matched accent (synced from the daily protocol) */
+  :root { --accent: 0, 242, 255; --accent-hex: #00f2ff; }
+  body[data-protocol="productive"] { --accent: 56, 189, 248;  --accent-hex: #38bdf8; }
+  body[data-protocol="workout"]    { --accent: 251, 113, 133; --accent-hex: #fb7185; }
+  body[data-protocol="rest"]       { --accent: 167, 139, 250; --accent-hex: #a78bfa; }
+  body[data-protocol="play"]       { --accent: 52, 211, 153;  --accent-hex: #34d399; }
+  /* Neon LED strip along the top edge (matches the planner) */
+  #assistant-glass::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background: linear-gradient(90deg, rgba(34, 211, 238, 0.9), rgba(139, 92, 246, 0.95) 30%, rgba(236, 72, 153, 0.9) 60%, rgba(52, 211, 153, 0.9));
+    -webkit-mask: linear-gradient(180deg, #000 0 3px, transparent 3px 100%);
+    mask: linear-gradient(180deg, #000 0 3px, transparent 3px 100%);
+    opacity: 0.9;
+  }
+    /* Navy gradient border + black middle (matches the planner's colored panes) */
+  #assistant-glass {
+    background:
+      linear-gradient(160deg, rgba(255, 255, 255, 0.08) 0%, transparent 40%),
+      radial-gradient(130% 90% at 0% 0%, rgba(30, 64, 175, 0.34), transparent 55%),
+      radial-gradient(130% 90% at 100% 100%, rgba(37, 99, 235, 0.26), transparent 55%),
+      rgba(2, 5, 11, 0.86);
+    border: 1.5px solid rgba(59, 130, 246, 0.5);
+    box-shadow:
+      inset 0 0 26px rgba(30, 64, 175, 0.24),
+      inset 0 1px 0 rgba(255, 255, 255, 0.16),
+      0 18px 50px rgba(0, 0, 0, 0.6),
+      0 0 0 1px rgba(59, 130, 246, 0.25),
+      0 0 36px rgba(30, 64, 175, 0.28);
+  }
+  </style>
 </head>
 <body data-theme="black">
   <div id="assistant-glass">
     <div class="head">
-      <span class="title">🗨️ Assistant<em>manages your day</em></span>
-      <button class="close" id="asst-close" title="Close (or click outside)">✕</button>
+      <span class="logo">🗨️</span>
+      <span class="title">Assistant<em>manages your day</em></span>
+      <button class="fullview" id="asst-fullview" title="Open the whole workspace — AI, notes, stats, planner &amp; info">⛶ Full view</button>
+      <button class="mode-toggle" id="asst-mode" title="Online/offline">🌐</button>
+      <button class="close" id="asst-close" title="Close">✕</button>
     </div>
     <div class="msgs" id="asst-msgs"></div>
     <div class="chips" id="asst-chips">
       <button class="chip" data-q="what's due today?">📅 Due today</button>
       <button class="chip" data-q="list my tasks">🗒️ Tasks</button>
+      <button class="chip" data-q="show my stats">📊 Stats</button>
+      <button class="chip" data-q="start the focus timer for 25 minutes">⏱️ Focus</button>
+      <button class="chip" data-q="open my notes">📝 Notes</button>
+      <button class="chip" data-q="show the weather">🌤️ Info</button>
       <button class="chip" data-q="show clipboard">📋 Clipboard</button>
-      <button class="chip" data-q="show screenshots">🖼️ Screenshots</button>
-      <button class="chip" data-q="remind me in 30 minutes to take a break">⏰ Remind</button>
+      <button class="chip" data-q="open settings">⚙️ Settings</button>
       <button class="chip" data-q="help">🆘 Help</button>
     </div>
+    <div class="hint" id="asst-hint" hidden></div>
     <div class="input-row">
-      <input id="asst-input" autocomplete="off" spellcheck="false"
-             placeholder="e.g. “I have a test next Thursday at 2pm” · “complete the report for 35 mins” · “show screenshots”">
-      <button id="asst-send" title="Send">➤</button>
+      <textarea id="asst-input" autocomplete="off" spellcheck="false" rows="1"
+                placeholder="e.g. “I have a test next Thursday at 2pm” · “complete the report for 35 mins” · “show my stats”"></textarea>
+      <button id="asst-send" title="Send (Enter)">➤</button>
     </div>
   </div>
 
@@ -271,6 +370,8 @@
       writeClipboard: () => Promise.resolve(true),
       writeClipboardImage: () => Promise.resolve(false),
       closeAssistant() {},
+      fullView() {},
+      setAssistantMode() {}, onAssistantMode() {},
     };
 
     const msgs = document.getElementById('asst-msgs');
@@ -288,6 +389,8 @@
       const v = input.value.trim();
       if (!v) return;
       input.value = '';
+      updateHint();
+      grow(); // reset the textarea back to one line
       say(v, 'user');
       api.sendAssistantMessage(v);
     }
@@ -361,18 +464,91 @@
     });
 
     // Boot greeting
-    say('Hi! I manage your day — tasks, deadlines, reminders and your clipboard. Just tell me things like:\n• "I have a test next Thursday at 2pm"\n• "add task write report for 2h by Friday 3pm"\n• "completed the report for 35 mins"\n• "show screenshots" · "what\'s due today?"');
+    say('Hi! I manage your day — tasks, deadlines, reminders, focus, stats and your clipboard. I can even remember your school schedule:\n• "my schedule: history mon wed 9am, math tue thu 10am" (all at once)\n• "history homework due tomorrow" (auto-dates to your class)\n• "what\'s my next class?" · "when is history class?" · "what classes do I have?"\n• "start the focus timer for write report" · "show my stats" · "what\'s due today?"');
 
     document.getElementById('asst-close').addEventListener('click', () => api.closeAssistant());
+    document.getElementById('asst-fullview').addEventListener('click', () => api.fullView());
     document.getElementById('asst-send').addEventListener('click', send);
-    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') send(); });
+    // Enter sends; Shift+Enter inserts a newline (growing textarea).
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+    });
+    // Auto-grow the textarea up to a few lines.
+    function grow() {
+      input.style.height = 'auto';
+      input.style.height = Math.min(96, input.scrollHeight) + 'px';
+    }
+    input.addEventListener('input', () => { updateHint(); grow(); });
     document.getElementById('asst-chips').addEventListener('click', (e) => {
       const chip = e.target.closest('.chip');
       if (!chip) return;
       input.value = chip.dataset.q || '';
       send();
     });
+
+    // Online/offline mode toggle (synced with the planner renderer).
+    const modeBtn = document.getElementById('asst-mode');
+    let currentMode = 'online';
+    function setModeUI(mode) {
+      currentMode = mode === 'offline' ? 'offline' : 'online';
+      modeBtn.textContent = currentMode === 'offline' ? '📴' : '🌐';
+      modeBtn.title = currentMode === 'offline' ? 'Offline — local commands only' : 'Online — AI (OpenRouter)';
+    }
+    modeBtn.addEventListener('click', () => {
+      api.setAssistantMode(currentMode === 'offline' ? 'online' : 'offline');
+    });
+    api.onAssistantMode((mode) => setModeUI(mode));
+
+    // Slash-command skeleton hint — fills in as you type each comma field.
+    const hint = document.getElementById('asst-hint');
+    const SKELETONS = {
+      task: ['name', 'date', 'category', 'time', 'duration'],
+      deadline: ['name', 'date', 'time'],
+      complete: ['task name'], done: ['task name'], finish: ['task name'],
+      delete: ['task name'], rm: ['task name'], remove: ['task name'], reopen: ['task name'],
+      progress: ['task name', 'minutes'], log: ['task name', 'minutes'],
+      focus: ['task name?', 'minutes?'], pomodoro: ['task name?', 'minutes?'],
+      view: ['tasks | calendar | week'],
+      plan: ['item; item; …'], schedule: ['item; item; …'],
+      week: ['(weekly recap)'], recap: ['(weekly recap)'], weekly: ['(weekly recap)'],
+      classes: ['(list my classes)'], class: ['(list my classes)'],
+      forget: ['class name'],
+      mode: ['online | offline'],
+    };
+    function updateHint() {
+      const v = input.value;
+      if (!v || v[0] !== '/') { hint.hidden = true; hint.textContent = ''; return; }
+      const m = v.match(/^\/([a-z]+)/i);
+      const cmd = m ? m[1].toLowerCase() : '';
+      const fields = SKELETONS[cmd];
+      if (!fields) { hint.hidden = false; hint.textContent = 'Commands: /task · /deadline · /complete · /delete · /reopen · /progress · /focus · /view · /plan · /week · /classes · /forget · /stats · /list · /due · /help · /mode'; return; }
+      const typed = v.slice(m[0].length);
+      const commas = (typed.match(/,/g) || []).length;
+      const idx = Math.min(commas, fields.length - 1);
+      hint.innerHTML = '';
+      const pre = document.createElement('span'); pre.textContent = '/' + cmd + ' '; pre.style.opacity = '0.55'; hint.appendChild(pre);
+      fields.forEach((f, i) => {
+        if (i > 0) { const c = document.createElement('span'); c.textContent = ', '; c.style.opacity = '0.45'; hint.appendChild(c); }
+        const s = document.createElement('span'); s.textContent = f;
+        if (i === idx) { s.style.color = '#67e8f9'; s.style.fontWeight = '700'; } else { s.style.opacity = '0.5'; }
+        hint.appendChild(s);
+      });
+      hint.hidden = false;
+    }
+
     setTimeout(() => input.focus(), 80);
   </script>
+<script>
+  (function () {
+    var api = window.electronAPI;
+    function apply(p) {
+      if (p === 'productive' || p === 'workout' || p === 'rest' || p === 'play') document.body.dataset.protocol = p;
+      else delete document.body.dataset.protocol;
+    }
+    if (api && api.onProtocol) api.onProtocol(apply);
+    if (api && api.getProtocol) api.getProtocol();
+  })();
+</script>
+  <script src="summon.js"></script>
 </body>
 </html>

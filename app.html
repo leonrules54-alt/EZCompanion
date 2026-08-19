@@ -14,6 +14,30 @@
   <!-- === Main Container === -->
   <div id="app">
 
+    <!-- The startup screen now lives in its own centered window (boot.html). -->
+
+    <!-- Daily protocol picker (launches on open; adapts the accent color) -->
+    <div id="protocol-modal" aria-hidden="true">
+      <div class="protocol-glass">
+        <div class="protocol-title">Select Daily Protocol</div>
+        <div class="protocol-sub">Choose your mode for today</div>
+        <div class="protocol-cards">
+          <button class="protocol-card" data-protocol="productive" type="button">
+            <span class="pc-icon">💼</span><span class="pc-name">Productive</span>
+          </button>
+          <button class="protocol-card" data-protocol="workout" type="button">
+            <span class="pc-icon">🔥</span><span class="pc-name">Workout</span>
+          </button>
+          <button class="protocol-card" data-protocol="rest" type="button">
+            <span class="pc-icon">🌙</span><span class="pc-name">Rest</span>
+          </button>
+          <button class="protocol-card" data-protocol="play" type="button">
+            <span class="pc-icon">🎮</span><span class="pc-name">Play</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- Browser-only launcher button: in Electron the floating launcher
          window (button.html) provides this menu instead, so this button and
          the ring menu below are hidden there. Clicking it opens the ring. -->
@@ -64,20 +88,24 @@
     <div id="assistant-panel" class="popup-hidden">
       <div class="popup-glass assistant-glass">
         <button class="popup-close" id="assistant-close">✕</button>
-        <div class="assistant-title">🗨️ Assistant</div>
+        <div class="assistant-title"><span class="assistant-logo">🗨️</span> Assistant <button class="assistant-fullview" id="assistant-fullview" title="Open the whole workspace — AI, notes, stats, planner &amp; info">⛶ Full view</button><button class="assistant-mode-toggle" id="assistant-mode-toggle" title="Online/offline">🌐</button></div>
         <div class="assistant-msgs" id="assistant-msgs"></div>
         <div class="assistant-chips" id="assistant-chips">
           <button class="chip" data-q="what's due today?">📅 Due today</button>
-          <button class="chip" data-q="list my tasks">🗒️ My tasks</button>
+          <button class="chip" data-q="list my tasks">🗒️ Tasks</button>
+          <button class="chip" data-q="show my stats">📊 Stats</button>
+          <button class="chip" data-q="start the focus timer for 25 minutes">⏱️ Focus</button>
+          <button class="chip" data-q="open my notes">📝 Notes</button>
+          <button class="chip" data-q="show the weather">🌤️ Info</button>
           <button class="chip" data-q="show clipboard">📋 Clipboard</button>
-          <button class="chip" data-q="show screenshots">🖼️ Screenshots</button>
-          <button class="chip" data-q="remind me in 30 minutes to take a break">⏰ Remind</button>
+          <button class="chip" data-q="open settings">⚙️ Settings</button>
           <button class="chip" data-q="help">🆘 Help</button>
         </div>
+        <div class="assistant-hint" id="assistant-hint" hidden></div>
         <div class="assistant-input-row">
-          <input id="assistant-input" autocomplete="off" spellcheck="false"
-                 placeholder="add task … · complete … · remind me …">
-          <button class="btn btn-primary" id="assistant-send" title="Send">➤</button>
+          <textarea id="assistant-input" autocomplete="off" spellcheck="false" rows="1"
+                    placeholder="add task … · complete … · remind me …"></textarea>
+          <button class="btn btn-primary" id="assistant-send" title="Send (Enter)">➤</button>
         </div>
       </div>
     </div>
@@ -86,10 +114,9 @@
          floating notes window) === -->
     <div id="notes-panel" class="panel-hidden">
       <div class="panel-glass notes-glass">
-        <h3>📝 Quick Notes</h3>
+        <h3>📝 Quick Notes <button class="notes-new" id="notes-new" title="New note">＋</button></h3>
         <button class="popup-close" id="notes-close">✕</button>
-        <textarea id="notes-input" placeholder="Write a quick note..."></textarea>
-        <button class="btn btn-primary btn-block" id="notes-save">Save note</button>
+        <textarea id="notes-input" placeholder="Write a quick note… (saves automatically)"></textarea>
         <div class="notes-list" id="notes-list"></div>
       </div>
     </div>
@@ -124,6 +151,7 @@
             <span class="streak-chip" id="streak-chip" title="Daily streak">🔥 0</span>
             <button class="tp-btn" id="focus-open" title="Focus timer">⏱</button>
             <button class="tp-btn" id="categories-open" title="Manage categories">🗂</button>
+            <button class="tp-btn" id="classes-open" title="Classes &amp; schedule">🏫</button>
             <button class="tp-btn" id="tasks-hide" title="Hide planner">▁</button>
           </div>
         </div>
@@ -226,6 +254,20 @@
       </div>
     </div>
 
+    <!-- === Classes sidebar (slide-in — edit name / days / time / color /
+         reminders for the assistant's remembered schedule) === -->
+    <div id="classes-panel" class="panel-hidden">
+      <div class="cat-sidebar cls-sidebar">
+        <div class="cat-head">
+          <span class="cat-title">🏫 Classes</span>
+          <button class="popup-close" id="classes-close" title="Close">✕</button>
+        </div>
+        <div class="cat-list" id="classes-list"></div>
+        <div class="cls-hint">Tell the assistant your schedule — “remember my schedule: history Mon Wed 9am” — or edit it here.</div>
+        <button class="btn btn-ghost btn-sm btn-block" id="classes-add">＋ Add class</button>
+      </div>
+    </div>
+
     <!-- === Settings Panel === -->
     <div id="settings-panel" class="panel-hidden">
       <div class="panel-glass">
@@ -240,9 +282,17 @@
           <input type="checkbox" id="setting-weather" checked>
         </label>
         <label class="setting-row">
-          <span>OpenAI key (AI assistant)</span>
-          <input type="password" id="setting-ai-key" class="setting-text" placeholder="sk-…" autocomplete="off" spellcheck="false">
+          <span>OpenRouter key (AI assistant)</span>
+          <input type="password" id="setting-ai-key" class="setting-text" placeholder="sk-or-v1-…" autocomplete="off" spellcheck="false">
         </label>
+        <label class="setting-row">
+          <span>Conflict window (min)</span>
+          <input type="number" id="setting-conflict-min" class="setting-text" min="0" max="240" step="5" value="30" inputmode="numeric">
+        </label>
+        <div class="setting-row">
+          <span>Backup</span>
+          <button class="btn btn-ghost btn-sm" id="export-data" title="Save tasks/deadlines/notes to a JSON file">💾 Export data</button>
+        </div>
       </div>
     </div>
 
@@ -279,6 +329,7 @@
   </div>
 
   <script src="assistant-parser.js"></script>
+  <script src="weather.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>

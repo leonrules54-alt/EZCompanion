@@ -631,8 +631,8 @@ body.electron-mode #browser-launcher {
   animation: focusPulse 1.6s ease-in-out infinite;
 }
 @keyframes focusPulse {
-  0%, 100% { filter: drop-shadow(0 0 8px rgba(163, 230, 53, 0.4)); }
-  50% { filter: drop-shadow(0 0 24px rgba(163, 230, 53, 0.95)); }
+  0%, 100% { opacity: 0.72; }
+  50% { opacity: 1; }
 }
 .focus-ring.flash {
   animation: focusFlash 0.7s ease 2;
@@ -734,8 +734,8 @@ body.electron-mode #browser-launcher {
   animation: focusBtnPulse 1.6s ease-in-out infinite;
 }
 @keyframes focusBtnPulse {
-  0%, 100% { transform: translateY(-1px) scale(1); box-shadow: 0 0 10px rgba(163, 230, 53, 0.35); }
-  50% { transform: translateY(-1px) scale(1.12); box-shadow: 0 0 22px rgba(163, 230, 53, 0.75); }
+  0%, 100% { opacity: 0.85; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.1); }
 }
 
 /* === Clipboard Vault === */
@@ -882,11 +882,71 @@ body.electron-mode #browser-launcher {
 }
 
 .assistant-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 13px;
   font-weight: 700;
   color: var(--text-main);
   margin-bottom: 8px;
   letter-spacing: 0.02em;
+}
+
+.assistant-logo {
+  font-size: 20px;
+  line-height: 1;
+  filter: drop-shadow(0 0 6px rgba(232, 121, 249, 0.65));
+}
+
+.assistant-mode-toggle {
+  margin-left: auto;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.09);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, border-color 0.15s;
+}
+.assistant-mode-toggle:hover { background: rgba(139, 92, 246, 0.32); border-color: rgba(167, 139, 250, 0.85); }
+
+/* "Full view" — the hero action that opens the whole workspace. A special
+   bright gradient pill so it reads as the one button that matters. */
+.assistant-fullview {
+  margin-left: auto;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: none;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: #0b1220;
+  cursor: pointer;
+  background: linear-gradient(135deg, #a3e635, #22d3ee);
+  box-shadow: 0 0 12px rgba(163, 230, 53, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.assistant-fullview:hover { transform: scale(1.06); box-shadow: 0 0 18px rgba(34, 211, 238, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.5); }
+.assistant-fullview:active { transform: scale(0.95); }
+
+.assistant-hint {
+  margin-bottom: 6px;
+  padding: 5px 9px;
+  border-radius: 9px;
+  font-size: 10.5px;
+  color: #cbd5e1;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px dashed rgba(148, 163, 255, 0.4);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .assistant-msgs {
@@ -962,12 +1022,16 @@ body.electron-mode #browser-launcher {
   min-width: 0;
   font-family: inherit;
   font-size: 11.5px;
+  line-height: 1.45;
   color: var(--text-main);
   background: var(--surface-input);
   border: 1.5px solid var(--hairline-strong);
   border-radius: 10px;
   padding: 8px 10px;
   outline: none;
+  resize: none;
+  overflow: hidden;
+  max-height: 96px;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 
@@ -1482,12 +1546,10 @@ body.electron-mode #browser-launcher {
   width: 56px;
   height: 102px;
   overflow-y: scroll;
-  /* proximity (not mandatory) + smooth behavior: the mouse wheel scrolls
-     naturally and the picker settles on the nearest value instead of
-     ratcheting one item per notch (that felt fast and jumpy). Programmatic
-     scrolls (click a value, tap ▲/▼) glide smoothly too. */
-  scroll-snap-type: y proximity;
-  scroll-behavior: smooth;
+  /* Mandatory snap centres exactly one value at a time; JS paces the wheel
+     and glides between values, so no CSS smooth-scroll is needed (it made
+     every wheel notch compound into a slow, laggy animation). */
+  scroll-snap-type: y mandatory;
   background: var(--surface-btn);
   border: 1.5px solid var(--hairline-strong);
   border-radius: 10px;
@@ -1506,14 +1568,14 @@ body.electron-mode #browser-launcher {
 .tm-wheel-list::after {
   content: '';
   position: absolute;
-  left: 5px;
-  right: 5px;
+  left: 3px;
+  right: 3px;
   top: 50%;
   height: 34px;
   transform: translateY(-50%);
-  border-radius: 8px;
-  background: rgba(139, 92, 246, 0.16);
-  border: 1.5px solid rgba(167, 139, 250, 0.6);
+  border-radius: 9px;
+  background: rgba(139, 92, 246, 0.10);
+  border: 1px solid rgba(167, 139, 250, 0.30);
   pointer-events: none;
 }
 .tm-wheel-pad { height: 34px; flex-shrink: 0; }
@@ -1528,7 +1590,15 @@ body.electron-mode #browser-launcher {
   cursor: pointer;
   transition: color 0.15s, transform 0.15s;
 }
-.tm-wheel-item.sel { color: var(--text-main); font-weight: 700; transform: scale(1.12); }
+.tm-wheel-item.sel {
+  color: var(--text-main);
+  font-weight: 700;
+  transform: scale(1.04);
+  background: rgba(139, 92, 246, 0.20);
+  border: 1.5px solid rgba(167, 139, 250, 0.85);
+  border-radius: 9px;
+  box-shadow: 0 0 12px rgba(139, 92, 246, 0.45), inset 0 0 8px rgba(139, 92, 246, 0.22);
+}
 .tm-sep { font-size: 18px; font-weight: 700; color: var(--text-dim); }
 
 /* Faint per-day dividing lines in the 3-day / 1-week task views */
@@ -1552,15 +1622,26 @@ body.electron-mode #browser-launcher {
   background: linear-gradient(90deg, transparent, var(--divider-line), transparent);
 }
 
-/* Category color accent on task cards (left border + glowing dot) */
+/* Category color accent on task cards: colored left border + a small tag
+   showing the class/category name in its color. */
 .item-row.has-cat { border-left: 4px solid var(--cat-color); }
-.cat-dot {
+.cat-tag {
   flex-shrink: 0;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--cat-color);
-  box-shadow: 0 0 6px var(--cat-color);
+  max-width: 96px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 999px;
+  color: var(--tag-color, #a5b4fc);
+  background: color-mix(in srgb, var(--tag-color, #a5b4fc) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--tag-color, #a5b4fc) 55%, transparent);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
 
 /* Daily task rows use the same compact height as deadline rows */
@@ -1579,7 +1660,7 @@ body.electron-mode #browser-launcher {
   border: 1.5px solid var(--hairline-strong);
   border-radius: 10px;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
-  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s, transform 0.15s;
+  transition: background 0.15s, border-color 0.15s, transform 0.15s;
 }
 .item-row:hover {
   background: var(--surface-row-strong);
@@ -2008,6 +2089,32 @@ body.electron-mode #browser-launcher {
   margin-bottom: 12px;
 }
 
+.notes-new {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-left: 6px;
+  vertical-align: middle;
+  border: 1.5px solid rgba(163, 230, 53, 0.5);
+  border-radius: 50%;
+  background: rgba(163, 230, 53, 0.12);
+  color: #d9f99d;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.15s, border-color 0.15s, color 0.15s;
+}
+.notes-new:hover {
+  background: rgba(163, 230, 53, 0.28);
+  color: #fff;
+  transform: scale(1.1);
+  border-color: rgba(163, 230, 53, 0.85);
+  box-shadow: 0 0 12px rgba(163, 230, 53, 0.45);
+}
+.notes-new:active { transform: scale(0.94); }
+
 #notes-input {
   width: 100%;
   min-height: 56px;
@@ -2328,6 +2435,106 @@ body.electron-mode #browser-launcher {
 .cat-del:hover { background: rgba(244, 63, 94, 0.35); color: #fff; border-color: rgba(244, 63, 94, 0.6); }
 .cat-empty { font-size: 11px; color: var(--text-dim); text-align: center; padding: 18px 6px; font-style: italic; }
 #categories-panel .btn-block { margin-top: 10px; }
+
+/* === Classes sidebar (wider twin of the categories sidebar) === */
+#classes-panel {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 250px;
+  z-index: 525;
+  pointer-events: none;
+  transition: transform 0.35s cubic-bezier(0.22, 0.61, 0.36, 1), opacity 0.3s ease;
+}
+#classes-panel.panel-hidden {
+  transform: translateX(-100%);
+  opacity: 0;
+}
+.cls-sidebar .cat-list { gap: 8px; }
+.cls-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  transition: background 0.15s, border-color 0.15s;
+}
+.cls-row:hover { background: rgba(255, 255, 255, 0.1); border-color: rgba(255, 255, 255, 0.2); }
+.cls-row .cat-name { flex: 1; min-width: 70px; }
+.cls-days {
+  display: flex;
+  gap: 3px;
+  width: 100%;
+}
+.cls-day {
+  flex: 1;
+  height: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: 9.5px;
+  font-weight: 800;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+.cls-day:hover { border-color: rgba(255, 255, 255, 0.35); color: var(--text-main); }
+.cls-day.on {
+  background: var(--cat-color, rgba(139, 92, 246, 0.55));
+  border-color: rgba(255, 255, 255, 0.45);
+  color: #fff;
+  box-shadow: 0 0 8px var(--cat-color, rgba(139, 92, 246, 0.5));
+}
+.cls-time {
+  width: 78px;
+  padding: 3px 5px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-main);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  outline: none;
+}
+.cls-time:focus { border-color: rgba(167, 139, 250, 0.7); }
+.cls-time::-webkit-calendar-picker-indicator { filter: invert(0.8); }
+.cls-bell {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.09);
+  font-size: 11px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+.cls-bell:hover { background: rgba(139, 92, 246, 0.3); border-color: rgba(167, 139, 250, 0.6); }
+.cls-bell.off { opacity: 0.4; }
+.cls-bell.off:hover { opacity: 1; }
+.cls-hint {
+  margin-top: 10px;
+  padding: 6px 8px;
+  font-size: 9.5px;
+  line-height: 1.45;
+  color: var(--text-dim);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px dashed rgba(148, 163, 255, 0.35);
+  border-radius: 8px;
+}
 
 /* === Settings Panel === */
 #settings-panel {
@@ -2832,8 +3039,8 @@ input, textarea { caret-color: var(--accent-cyan); }
 }
 
 .tm-wheel-list::after {
-  background: rgba(139, 92, 246, 0.26);
-  border-color: rgba(167, 139, 250, 0.6);
+  background: rgba(139, 92, 246, 0.10);
+  border-color: rgba(167, 139, 250, 0.30);
 }
 
 /* Deadline/task markers: slightly hotter LED glows */
@@ -2879,10 +3086,23 @@ body.sleeping-all .popup-glass,
 body.sleeping-all .panel-glass,
 body.sleeping-all .cat-sidebar,
 body.sleeping-all .task-modal-glass {
-  opacity: 0.04 !important;
-  transform: scale(0.985);
+  opacity: 0 !important;
+  transform: translateY(24px) scale(0.965);
   pointer-events: none !important;
-  transition: opacity 0.45s ease, transform 0.45s ease;
+  transition:
+    opacity 0.6s cubic-bezier(0.4, 0, 0.2, 1),
+    transform 0.6s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+/* One-shot "wake" entrance after Ctrl+Shift+S: a futuristic slide-up + fade
+   (transform/opacity only — compositor-safe, no repaint). Removed on
+   animationend so the panel's own transform rules stay in charge. */
+.tasks-panel-glass.wake-in {
+  animation: fxWakeIn 0.65s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+@keyframes fxWakeIn {
+  0%   { opacity: 0; transform: translateY(30px) scale(0.965); }
+  60%  { opacity: 1; }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
 }
 body.alt-dim .tasks-panel-glass,
 body.alt-dim .popup-glass,
@@ -3151,3 +3371,569 @@ body.view-calendar #calendar-view { display: flex; }
   padding: 24px 10px;
   font-style: italic;
 }
+
+/* ============================================================
+   VISUAL FX — ambient aurora, glowing hover rings, startup
+   sequence. Static gradients + compositor-friendly animations
+   only; appended last so these win at equal specificity.
+   ============================================================ */
+
+/* --- Ambient aurora: removed. The old version animated `filter: hue-rotate`
+   on a full-size ::before layer every 16s, forcing constant repaints/lag.
+   The panels' static gradient fills + LED strip carry the color instead. --- */
+
+/* --- Glowing hover rings on the little controls --- */
+.tp-btn:hover,
+.vs-btn:hover,
+.cal-nav:hover,
+.note-act:hover,
+.popup-close:hover,
+.tm-wheel-btn:hover {
+  box-shadow:
+    0 0 0 2px rgba(167, 139, 250, 0.55),
+    0 0 16px rgba(139, 92, 246, 0.5),
+    0 0 30px rgba(34, 211, 238, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  border-color: rgba(224, 226, 255, 0.85);
+}
+
+/* Destructive controls keep a red ring */
+.note-act.del:hover,
+.cat-del:hover {
+  box-shadow:
+    0 0 0 2px rgba(244, 63, 94, 0.5),
+    0 0 16px rgba(244, 63, 94, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  border-color: rgba(244, 63, 94, 0.7);
+}
+
+/* Pill chips + buttons bloom on hover */
+.fchip:hover,
+.chip:hover {
+  box-shadow:
+    0 0 0 2px rgba(167, 139, 250, 0.4),
+    0 0 18px rgba(139, 92, 246, 0.4),
+    0 0 34px rgba(34, 211, 238, 0.14);
+}
+.btn-primary:hover {
+  box-shadow:
+    0 0 0 2px rgba(167, 139, 250, 0.45),
+    0 8px 26px rgba(99, 102, 241, 0.55),
+    0 0 30px rgba(34, 211, 238, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+.btn-ghost:hover {
+  box-shadow:
+    0 0 0 2px rgba(167, 139, 250, 0.35),
+    0 4px 18px rgba(0, 0, 0, 0.3),
+    0 0 20px rgba(99, 102, 241, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+
+/* Rows light up with an INSET glow ring (never clipped by the scroll list)
+   plus a lift, so the holographic pop is clearly visible on hover. */
+.item-row:hover {
+  background: var(--surface-row-strong);
+  border-color: rgba(224, 226, 255, 0.9);
+  box-shadow:
+    inset 0 0 0 1.5px rgba(167, 139, 250, 0.6),
+    inset 0 0 16px rgba(139, 92, 246, 0.32),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    0 0 14px rgba(34, 211, 238, 0.25);
+  transform: translateY(-1px) scale(1.012);
+}
+.item-row.has-cat:hover {
+  border-color: color-mix(in srgb, var(--cat-color) 80%, white);
+  box-shadow:
+    inset 0 0 0 1.5px color-mix(in srgb, var(--cat-color) 80%, white),
+    inset 0 0 16px color-mix(in srgb, var(--cat-color) 35%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    0 0 14px color-mix(in srgb, var(--cat-color) 55%, transparent);
+}
+.note-item:hover {
+  background: rgba(251, 191, 36, 0.14);
+  border-color: rgba(251, 191, 36, 0.7);
+  box-shadow:
+    inset 0 0 0 1.5px rgba(251, 191, 36, 0.55),
+    inset 0 0 16px rgba(251, 191, 36, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  transform: translateY(-1px);
+}
+.vault-item:hover {
+  background: rgba(99, 102, 241, 0.16);
+  border-color: rgba(167, 139, 250, 0.7);
+  box-shadow:
+    inset 0 0 0 1.5px rgba(167, 139, 250, 0.5),
+    inset 0 0 14px rgba(99, 102, 241, 0.3);
+}
+.cat-row:hover {
+  border-color: var(--cat-color, var(--hairline-strong));
+  box-shadow:
+    inset 0 0 0 1.5px var(--cat-color, rgba(167, 139, 250, 0.5)),
+    inset 0 0 14px color-mix(in srgb, var(--cat-color, #8b5cf6) 35%, transparent);
+}
+
+/* --- Frosted glass panes for the two planner lists, tinted per section --- */
+.planner-half {
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0.02) 30%, transparent 52%),
+    var(--surface-panel);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.05),
+    inset 0 0 30px rgba(139, 92, 246, 0.07);
+}
+
+/* Deadlines = rose/red glass */
+.deadlines-half {
+  border: 1.5px solid rgba(244, 63, 94, 0.5);
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.14) 0%, transparent 40%),
+    radial-gradient(130% 90% at 0% 0%, rgba(244, 63, 94, 0.18), transparent 55%),
+    radial-gradient(130% 90% at 100% 100%, rgba(251, 113, 133, 0.10), transparent 55%),
+    rgba(22, 11, 20, 0.55);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.24),
+    inset 0 0 28px rgba(244, 63, 94, 0.16),
+    0 0 20px rgba(244, 63, 94, 0.10);
+}
+.deadlines-half .section-head { border-bottom-color: rgba(244, 63, 94, 0.35); }
+
+/* Daily tasks = emerald/green glass */
+.daily-half {
+  border: 1.5px solid rgba(52, 211, 153, 0.5);
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.14) 0%, transparent 40%),
+    radial-gradient(130% 90% at 0% 0%, rgba(52, 211, 153, 0.18), transparent 55%),
+    radial-gradient(130% 90% at 100% 100%, rgba(110, 231, 183, 0.10), transparent 55%),
+    rgba(9, 22, 17, 0.55);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.24),
+    inset 0 0 28px rgba(52, 211, 153, 0.16),
+    0 0 20px rgba(52, 211, 153, 0.10);
+}
+.daily-half .section-head { border-bottom-color: rgba(52, 211, 153, 0.35); }
+
+/* Stronger frosted blur on the main glass surfaces */
+.popup-glass,
+.panel-glass {
+  backdrop-filter: blur(22px) saturate(1.5) brightness(1.05);
+  -webkit-backdrop-filter: blur(22px) saturate(1.5) brightness(1.05);
+}
+.tasks-panel-glass {
+  backdrop-filter: blur(18px) saturate(1.45) brightness(1.05);
+  -webkit-backdrop-filter: blur(18px) saturate(1.45) brightness(1.05);
+}
+
+/* Frosted header + view-switch strips */
+.tasks-panel-header {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent);
+  box-shadow: inset 0 -1px 0 rgba(167, 139, 250, 0.18);
+}
+.view-switch {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* Glass sheen on filter chips + view buttons (active states keep their fill) */
+.fchip:not(.active),
+.vs-btn:not(.active) {
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.02)),
+    var(--surface-btn);
+}
+
+/* ============================================================
+   CYBER PROTOCOL — deep frosted glass + daily protocol picker
+   ============================================================ */
+
+/* Accent (RGB + hex). Default cyan cyber; recolored per daily protocol. */
+:root {
+  --accent: 0, 242, 255;
+  --accent-hex: #00f2ff;
+}
+body[data-protocol="productive"] { --accent: 56, 189, 248;  --accent-hex: #38bdf8; }
+body[data-protocol="workout"]    { --accent: 251, 113, 133; --accent-hex: #fb7185; }
+body[data-protocol="rest"]       { --accent: 167, 139, 250; --accent-hex: #a78bfa; }
+body[data-protocol="play"]       { --accent: 52, 211, 153;  --accent-hex: #34d399; }
+
+/* Deep frosted cyber glass across every floating panel */
+.popup-glass,
+.panel-glass,
+.tasks-panel-glass,
+.task-modal-glass,
+.cat-sidebar {
+  background: rgba(13, 17, 23, 0.88);
+  backdrop-filter: blur(16px) saturate(1.35) brightness(1.05);
+  -webkit-backdrop-filter: blur(16px) saturate(1.35) brightness(1.05);
+  border: 1px solid rgba(var(--accent), 0.25);
+  border-top: 1px solid rgba(255, 255, 255, 0.4);
+  box-shadow:
+    inset 0 0 12px rgba(var(--accent), 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    0 18px 50px rgba(0, 0, 0, 0.55),
+    0 0 0 1px rgba(var(--accent), 0.12),
+    0 0 30px rgba(var(--accent), 0.10);
+}
+
+/* Protocol accent recolors the dashboard's key highlights */
+.daily-progress-fill {
+  background: linear-gradient(90deg, var(--accent-hex), #22d3ee);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--accent-hex) 55%, transparent);
+}
+.streak-chip {
+  background: color-mix(in srgb, var(--accent-hex) 22%, transparent);
+  border-color: color-mix(in srgb, var(--accent-hex) 55%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    0 0 14px color-mix(in srgb, var(--accent-hex) 30%, transparent);
+  text-shadow: 0 0 8px color-mix(in srgb, var(--accent-hex) 60%, transparent);
+}
+.fchip.active {
+  background: color-mix(in srgb, var(--accent-hex) 75%, transparent);
+  border-color: color-mix(in srgb, var(--accent-hex) 70%, transparent);
+  box-shadow:
+    0 0 14px color-mix(in srgb, var(--accent-hex) 50%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+.vs-btn.active {
+  background: color-mix(in srgb, var(--accent-hex) 80%, transparent);
+  box-shadow:
+    0 2px 12px color-mix(in srgb, var(--accent-hex) 55%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+.t-icon {
+  background: color-mix(in srgb, var(--accent-hex) 30%, transparent);
+  border-color: color-mix(in srgb, var(--accent-hex) 60%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    0 0 12px color-mix(in srgb, var(--accent-hex) 30%, transparent);
+}
+
+/* --- SELECT DAILY PROTOCOL modal --- */
+#protocol-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 11000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(5, 8, 14, 0.6);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+#protocol-modal.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+#protocol-modal.closing {
+  opacity: 0;
+  pointer-events: none;
+}
+.protocol-glass {
+  position: relative;
+  width: 330px;
+  max-width: 92%;
+  padding: 22px 20px;
+  border-radius: 20px;
+  background: rgba(13, 17, 23, 0.88);
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  border: 1px solid rgba(var(--accent), 0.3);
+  border-top: 1px solid rgba(255, 255, 255, 0.45);
+  box-shadow:
+    inset 0 0 12px rgba(var(--accent), 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 20px 60px rgba(0, 0, 0, 0.6),
+    0 0 40px rgba(var(--accent), 0.15);
+  text-align: center;
+  transform: translateY(10px) scale(0.96);
+  transition: transform 0.3s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+#protocol-modal.open .protocol-glass { transform: translateY(0) scale(1); }
+.protocol-title {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.22em;
+  color: #e4edff;
+  text-shadow: 0 0 12px rgba(var(--accent), 0.8);
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+.protocol-sub {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: #94a3b8;
+  margin-bottom: 16px;
+}
+.protocol-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.protocol-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  padding: 15px 8px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  cursor: pointer;
+  font-family: inherit;
+  color: #e4edff;
+  transition: all 0.18s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+.protocol-card .pc-icon { font-size: 24px; filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.4)); }
+.protocol-card .pc-name { font-size: 11px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
+.protocol-card[data-protocol="productive"]:hover { border-color: #38bdf8; box-shadow: inset 0 0 14px rgba(56, 189, 248, 0.25), 0 0 18px rgba(56, 189, 248, 0.35); transform: translateY(-2px); }
+.protocol-card[data-protocol="workout"]:hover { border-color: #fb7185; box-shadow: inset 0 0 14px rgba(251, 113, 133, 0.25), 0 0 18px rgba(251, 113, 133, 0.35); transform: translateY(-2px); }
+.protocol-card[data-protocol="rest"]:hover { border-color: #a78bfa; box-shadow: inset 0 0 14px rgba(167, 139, 250, 0.25), 0 0 18px rgba(167, 139, 250, 0.35); transform: translateY(-2px); }
+.protocol-card[data-protocol="play"]:hover { border-color: #34d399; box-shadow: inset 0 0 14px rgba(52, 211, 153, 0.25), 0 0 18px rgba(52, 211, 153, 0.35); transform: translateY(-2px); }
+.protocol-card:active { transform: scale(0.95); }
+
+/* --- Browser hover card: holographic glass + neon LED strip --- */
+#row-hover-card {
+  background:
+    radial-gradient(130% 80% at 10% 0%, rgba(139, 92, 246, 0.18), transparent 55%),
+    radial-gradient(130% 80% at 90% 100%, rgba(34, 211, 238, 0.14), transparent 55%),
+    rgba(10, 15, 30, 0.94);
+  border: 2px solid rgba(167, 139, 250, 0.7);
+  border-top: 1.5px solid rgba(255, 255, 255, 0.6);
+  box-shadow:
+    0 16px 48px rgba(0, 0, 0, 0.6),
+    0 0 0 2px rgba(167, 139, 250, 0.35),
+    0 0 34px rgba(139, 92, 246, 0.35),
+    0 0 60px rgba(34, 211, 238, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+#row-hover-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(90deg, rgba(34, 211, 238, 0.9), rgba(139, 92, 246, 0.95) 30%, rgba(236, 72, 153, 0.9) 60%, rgba(251, 191, 36, 0.9));
+  -webkit-mask: linear-gradient(180deg, #000 0 3px, transparent 3px 100%);
+  mask: linear-gradient(180deg, #000 0 3px, transparent 3px 100%);
+  opacity: 0.95;
+}
+
+/* --- Startup status-check screen (body.booting, gated on click) ---
+   A centered green "status check" card holds the view until the user clicks
+   to continue; only then does the planner fade in. Transform + opacity only. */
+body.booting #app { overflow: hidden; }
+
+/* Planner hides instantly while the status screen owns the view; the base
+   opacity transition fades it back in when `booting` is removed on click.
+   (The glass keeps its own slide transition from the panel-hidden rule.) */
+.tasks-panel-header,
+.view-switch,
+.planner-body {
+  transition: opacity 0.5s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+body.booting .tasks-panel-glass,
+body.booting .tasks-panel-header,
+body.booting .view-switch,
+body.booting .planner-body {
+  opacity: 0 !important;
+  transition: none !important;
+}
+
+/* Opaque dark-green backdrop (holds until click) */
+body.booting #app::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  background: radial-gradient(circle at 50% 42%, rgba(8, 13, 28, 0.94), rgba(3, 5, 12, 0.98));
+  animation: fxBootBackdrop 0.5s ease both;
+}
+@keyframes fxBootBackdrop {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+body.booting.boot-exit #app::before { animation: fxBootBackdropOut 0.36s ease forwards; }
+@keyframes fxBootBackdropOut { to { opacity: 0; } }
+
+/* Centered, clickable green status-check card */
+#boot-briefing {
+  position: absolute;
+  inset: 0;
+  z-index: 10002;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 22px;
+  pointer-events: none;
+  opacity: 0;
+}
+body.booting #boot-briefing {
+  opacity: 1;
+  pointer-events: auto;
+  cursor: pointer;
+  animation: fxBootBriefing 0.5s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+body.booting.boot-exit #boot-briefing { animation: fxBootBriefingOut 0.3s ease forwards; }
+@keyframes fxBootBriefing {
+  from { opacity: 0; transform: scale(0.96); }
+  to   { opacity: 1; transform: scale(1); }
+}
+@keyframes fxBootBriefingOut { to { opacity: 0; transform: scale(1.02); } }
+
+/* Jarvis-style HUD: a centered holographic core with rotating rings, a
+   pulsing orb, and the live status readout below. Transform + opacity only. */
+.boot-hud {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  text-align: center;
+}
+.boot-core {
+  position: relative;
+  width: 168px;
+  height: 168px;
+  flex: 0 0 auto;
+}
+.boot-ring {
+  position: absolute;
+  border-radius: 50%;
+  border: 1px solid rgba(34, 211, 238, 0.35);
+  border-top-color: rgba(34, 211, 238, 0.9);
+  border-right-color: rgba(139, 92, 246, 0.65);
+  box-shadow: 0 0 18px rgba(34, 211, 238, 0.18);
+  animation: bootRingSpin 9s linear infinite;
+}
+.boot-ring-1 { inset: 0; }
+.boot-ring-2 {
+  inset: 16px;
+  border-style: dashed;
+  border-color: rgba(139, 92, 246, 0.4);
+  border-top-color: rgba(236, 72, 153, 0.8);
+  animation: bootRingSpin 6s linear infinite reverse;
+}
+.boot-ring-3 {
+  inset: 32px;
+  border-color: rgba(52, 211, 153, 0.35);
+  border-top-color: rgba(52, 211, 153, 0.85);
+  animation: bootRingSpin 4s linear infinite;
+}
+@keyframes bootRingSpin { to { transform: rotate(360deg); } }
+.boot-orb {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.boot-orb::before {
+  content: '';
+  position: absolute;
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 42% 38%, rgba(255, 255, 255, 0.9), rgba(34, 211, 238, 0.55) 35%, rgba(139, 92, 246, 0.2) 70%, transparent);
+  animation: bootOrbPulse 2.4s ease-in-out infinite;
+}
+.boot-orb span {
+  position: relative;
+  font-size: 30px;
+  line-height: 1;
+  filter: drop-shadow(0 0 10px rgba(34, 211, 238, 0.9));
+  animation: bootOrbPulse 2.4s ease-in-out infinite;
+}
+@keyframes bootOrbPulse { 0%, 100% { transform: scale(0.94); opacity: 0.72; } 50% { transform: scale(1.06); opacity: 1; } }
+
+/* Status readout */
+.boot-lines {
+  min-width: 300px;
+  padding: 14px 22px;
+  border-radius: 14px;
+  background: rgba(6, 11, 22, 0.85);
+  border: 1px solid rgba(34, 211, 238, 0.22);
+  box-shadow:
+    inset 0 0 16px rgba(34, 211, 238, 0.08),
+    0 0 26px rgba(34, 211, 238, 0.12);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 2.0;
+  letter-spacing: 0.05em;
+  text-align: left;
+  color: #cfe9ff;
+  text-shadow: 0 0 8px rgba(34, 211, 238, 0.5);
+}
+.boot-lines .bl { opacity: 0; animation: fxBootLine 0.4s ease forwards; }
+.boot-lines .bl::before { content: '▸ '; color: rgba(34, 211, 238, 0.95); }
+.boot-lines .bl:nth-child(1) { animation-delay: 0.10s; }
+.boot-lines .bl:nth-child(2) { animation-delay: 0.22s; }
+.boot-lines .bl:nth-child(3) { animation-delay: 0.34s; }
+.boot-lines .bl:nth-child(4) { animation-delay: 0.46s; }
+.boot-lines .bl:nth-child(5) { animation-delay: 0.58s; }
+.boot-lines .bl:nth-child(6) { animation-delay: 0.70s; }
+.boot-lines .bl:nth-child(7) { animation-delay: 0.82s; }
+@keyframes fxBootLine {
+  from { opacity: 0; transform: translateX(-8px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.boot-lines .bl-label {
+  display: inline-block;
+  width: 96px;
+  color: #7dd3fc;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+}
+.boot-lines .bl-value { color: #e8f6ff; }
+
+/* Blinking "click to initialize" prompt */
+.boot-continue {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: #7dd3fc;
+  text-shadow: 0 0 10px rgba(34, 211, 238, 0.8);
+  animation: fxBootContinue 1.5s ease-in-out infinite;
+}
+@keyframes fxBootContinue { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
+
+/* One-shot planner entrance after the Jarvis card is dismissed: the glass
+   glides down + fades in while the boot window fades out above it. */
+.tasks-panel-glass.boot-summon {
+  animation: fxBootSummon 0.45s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+@keyframes fxBootSummon {
+  from { opacity: 0; transform: translateY(14px) scale(0.985); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* One-shot scanline sweep */
+body.booting #app::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 34%;
+  pointer-events: none;
+  z-index: 10000;
+  background: linear-gradient(180deg, transparent, rgba(139, 92, 246, 0.16) 30%, rgba(34, 211, 238, 0.42) 50%, rgba(139, 92, 246, 0.16) 70%, transparent);
+  mix-blend-mode: screen;
+  animation: fxBootSweep 1.4s cubic-bezier(0.22, 0.61, 0.36, 1) 0.1s both;
+}
+@keyframes fxBootSweep {
+  0%   { transform: translateY(-45%); opacity: 0; }
+  12%  { opacity: 1; }
+  55%  { opacity: 1; }
+  100% { transform: translateY(320%); opacity: 0; }
+}
+
+/* --- Neon border: STATIC. The old "breathing" loop animated box-shadow
+   every 6s (a full repaint each frame) — the #1 cause of UI lag. The crisp
+   neon border/glow is set once in the CYBER PROTOCOL block below. --- */

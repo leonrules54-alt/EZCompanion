@@ -26,22 +26,50 @@
     gap: 7px;
     padding: 13px 14px;
     border-radius: 16px;
-    background: rgba(10, 15, 30, 0.92);
-    backdrop-filter: blur(16px) saturate(1.4) brightness(1.08);
-    -webkit-backdrop-filter: blur(16px) saturate(1.4) brightness(1.08);
-    border: 2px solid rgba(167, 139, 250, 0.45);
-    border-top: 1.5px solid rgba(255, 255, 255, 0.5);
+    /* Deep holographic cyber glass */
+    background:
+      radial-gradient(130% 80% at 10% 0%, rgba(var(--accent), 0.14), transparent 55%),
+      radial-gradient(130% 80% at 90% 100%, rgba(139, 92, 246, 0.14), transparent 55%),
+      rgba(13, 17, 23, 0.88);
+    backdrop-filter: blur(16px) saturate(1.4) brightness(1.06);
+    -webkit-backdrop-filter: blur(16px) saturate(1.4) brightness(1.06);
+    border: 1px solid rgba(var(--accent), 0.3);
+    border-top: 1px solid rgba(255, 255, 255, 0.5);
     box-shadow:
-      0 16px 48px rgba(0, 0, 0, 0.55),
-      0 0 60px rgba(139, 92, 246, 0.2),
-      0 0 0 1.5px rgba(167, 139, 250, 0.28),
-      0 0 24px rgba(139, 92, 246, 0.16),
-      inset 0 1px 0 rgba(255, 255, 255, 0.35);
+      inset 0 0 12px rgba(var(--accent), 0.08),
+      inset 0 1px 0 rgba(255, 255, 255, 0.22),
+      0 16px 48px rgba(0, 0, 0, 0.6),
+      0 0 0 1px rgba(var(--accent), 0.14),
+      0 0 34px rgba(var(--accent), 0.14);
     opacity: 0;
     transform: translateX(-6px) scale(0.97);
     animation: pop 0.22s cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
   }
   @keyframes pop { to { opacity: 1; transform: translateX(0) scale(1); } }
+
+  /* Neon LED strip along the top edge */
+  #card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background: linear-gradient(90deg, rgba(34, 211, 238, 0.95), rgba(139, 92, 246, 0.95) 30%, rgba(236, 72, 153, 0.9) 60%, rgba(251, 191, 36, 0.95));
+    -webkit-mask: linear-gradient(180deg, #000 0 3px, transparent 3px 100%);
+    mask: linear-gradient(180deg, #000 0 3px, transparent 3px 100%);
+    opacity: 0.95;
+  }
+
+  /* Fine holographic scanlines over the surface */
+  #card::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background: repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.035) 0 1px, transparent 1px 3px);
+    opacity: 0.6;
+  }
 
   .hc-head {
     display: flex;
@@ -119,7 +147,28 @@
     box-shadow: 0 0 12px rgba(163, 230, 53, 0.55);
     transition: width 0.4s ease;
   }
-</style>
+  /* Planner-matched accent (synced from the daily protocol) */
+  :root { --accent: 0, 242, 255; --accent-hex: #00f2ff; }
+  body[data-protocol="productive"] { --accent: 56, 189, 248;  --accent-hex: #38bdf8; }
+  body[data-protocol="workout"]    { --accent: 251, 113, 133; --accent-hex: #fb7185; }
+  body[data-protocol="rest"]       { --accent: 167, 139, 250; --accent-hex: #a78bfa; }
+  body[data-protocol="play"]       { --accent: 52, 211, 153;  --accent-hex: #34d399; }
+    /* Navy gradient border + black middle (matches the planner's colored panes) */
+  #card {
+    background:
+      linear-gradient(160deg, rgba(255, 255, 255, 0.08) 0%, transparent 40%),
+      radial-gradient(130% 90% at 0% 0%, rgba(30, 64, 175, 0.34), transparent 55%),
+      radial-gradient(130% 90% at 100% 100%, rgba(37, 99, 235, 0.26), transparent 55%),
+      rgba(2, 5, 11, 0.86);
+    border: 1.5px solid rgba(59, 130, 246, 0.5);
+    box-shadow:
+      inset 0 0 26px rgba(30, 64, 175, 0.24),
+      inset 0 1px 0 rgba(255, 255, 255, 0.16),
+      0 18px 50px rgba(0, 0, 0, 0.6),
+      0 0 0 1px rgba(59, 130, 246, 0.25),
+      0 0 36px rgba(30, 64, 175, 0.28);
+  }
+  </style>
 </head>
 <body>
   <div id="card">
@@ -172,5 +221,17 @@
       }
     });
   </script>
+<script>
+  (function () {
+    var api = window.electronAPI;
+    function apply(p) {
+      if (p === 'productive' || p === 'workout' || p === 'rest' || p === 'play') document.body.dataset.protocol = p;
+      else delete document.body.dataset.protocol;
+    }
+    if (api && api.onProtocol) api.onProtocol(apply);
+    if (api && api.getProtocol) api.getProtocol();
+  })();
+</script>
+  <script src="summon.js"></script>
 </body>
 </html>

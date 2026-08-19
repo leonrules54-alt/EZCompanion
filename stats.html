@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Daily Stats</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body {
+    width: 100%; height: 100%;
+    background: transparent;
+    overflow: hidden;
+    font-family: 'Comfortaa', 'Segoe UI', system-ui, sans-serif;
+    user-select: none;
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .wrap {
+    position: absolute;
+    inset: 14px;
+    border-radius: 24px;
+    background: rgba(13, 17, 23, 0.88);
+    backdrop-filter: blur(16px) saturate(1.35) brightness(1.05);
+    -webkit-backdrop-filter: blur(16px) saturate(1.35) brightness(1.05);
+    border: 1px solid rgba(var(--accent), 0.25);
+    border-top: 1px solid rgba(255, 255, 255, 0.45);
+    box-shadow:
+      inset 0 0 12px rgba(var(--accent), 0.08),
+      inset 0 1px 0 rgba(255, 255, 255, 0.18),
+      0 24px 80px rgba(0, 0, 0, 0.6),
+      0 0 0 1px rgba(var(--accent), 0.12),
+      0 0 30px rgba(var(--accent), 0.10);
+    display: flex;
+    flex-direction: column;
+    padding: 18px 24px 16px;
+    color: #e8edff;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+  }
+  .wrap::-webkit-scrollbar { width: 6px; }
+  .wrap::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.22); border-radius: 999px; }
+  .wrap::-webkit-scrollbar-track { background: transparent; }
+
+  .head {
+    -webkit-app-region: drag;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  }
+  .head .logo { font-size: 24px; filter: drop-shadow(0 0 10px rgba(139, 92, 246, 0.8)); }
+  .head .title { font-size: 18px; font-weight: 800; letter-spacing: 0.03em; }
+  .head .date {
+    margin-left: auto;
+    font-size: 12px;
+    font-weight: 600;
+    color: #a5b4fc;
+    letter-spacing: 0.04em;
+  }
+  .close {
+    -webkit-app-region: no-drag;
+    width: 30px; height: 30px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.06);
+    color: #e8edff;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.18s;
+  }
+  .close:hover { background: rgba(244, 63, 94, 0.35); border-color: rgba(244, 63, 94, 0.7); }
+
+  /* Hero: big progress ring */
+  .hero {
+    display: flex;
+    align-items: center;
+    gap: 22px;
+    padding: 14px 4px;
+  }
+  .ring {
+    position: relative;
+    width: 128px; height: 128px;
+    flex: 0 0 auto;
+  }
+  .ring svg { transform: rotate(-90deg); }
+  .ring .track { stroke: rgba(255, 255, 255, 0.1); }
+  .ring .fill {
+    stroke: url(#grad);
+    stroke-linecap: round;
+    transition: stroke-dashoffset 0.8s cubic-bezier(0.22, 0.61, 0.36, 1);
+    filter: drop-shadow(0 0 8px rgba(163, 230, 53, 0.6));
+  }
+  .ring .pct {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+  .ring .pct b { font-size: 30px; font-weight: 800; }
+  .ring .pct span { font-size: 10px; font-weight: 700; color: #94a3b8; letter-spacing: 0.08em; text-transform: uppercase; }
+  .hero-info { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .hero-info .greeting { font-size: 20px; font-weight: 700; }
+  .hero-info .sub { font-size: 12px; color: #a5b4fc; line-height: 1.5; }
+
+  /* Stat tiles */
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .tile {
+    border-radius: 16px;
+    padding: 14px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1.5px solid rgba(255, 255, 255, 0.14);
+    border-top: 1px solid rgba(255, 255, 255, 0.28);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  }
+  .tile .k { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #a5b4fc; margin-bottom: 8px; }
+  .tile .v { font-size: 24px; font-weight: 800; }
+  .tile .v small { font-size: 12px; font-weight: 600; color: #94a3b8; }
+  .tile.done .v { color: #34d399; }
+  .tile.progress .v { color: #67e8f9; }
+  .tile.focus .v { color: #a3e635; }
+  .tile.streak .v { color: #fbbf24; }
+
+  /* 7-day activity chart */
+  .chart {
+    display: flex;
+    align-items: stretch;
+    gap: 12px;
+    height: 128px;
+    padding: 12px 14px 8px;
+    margin-bottom: 14px;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1.5px solid rgba(255, 255, 255, 0.12);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+  .bar {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+  }
+  .bar-val { font-size: 10px; font-weight: 700; color: #a5b4fc; white-space: nowrap; }
+  .bar-track {
+    width: 100%;
+    max-width: 34px;
+    flex: 1;
+    display: flex;
+    align-items: flex-end;
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .bar-fill {
+    width: 100%;
+    border-radius: 8px 8px 3px 3px;
+    background: linear-gradient(180deg, #a3e635, #34d399);
+    min-height: 3px;
+    transition: height 0.6s cubic-bezier(0.22, 0.61, 0.36, 1);
+    box-shadow: 0 0 12px rgba(163, 230, 53, 0.35);
+  }
+  .bar-day {
+    font-size: 10px;
+    font-weight: 700;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  /* Heatmap / line-chart toggle */
+  .heat-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin: 6px 0 8px;
+  }
+  .heat-head .section-title { margin: 0; }
+  .heat-toggle { display: flex; gap: 4px; }
+  .ht-btn {
+    font-family: inherit;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: #94a3b8;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 8px;
+    padding: 4px 9px;
+    cursor: pointer;
+    transition: all 0.18s;
+  }
+  .ht-btn:hover { color: #e2e8f0; border-color: rgba(255, 255, 255, 0.3); }
+  .ht-btn.active {
+    color: #0b1220;
+    background: linear-gradient(135deg, #a3e635, #22d3ee);
+    border-color: transparent;
+    box-shadow: 0 0 12px rgba(34, 211, 238, 0.4);
+  }
+  /* 12-week activity line chart (gradient + draw-in animation) */
+  .linechart {
+    margin-bottom: 14px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1.5px solid rgba(255, 255, 255, 0.12);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    padding: 8px 10px;
+  }
+  .linechart svg { display: block; width: 100%; height: 168px; }
+  .lc-line {
+    fill: none;
+    stroke: url(#lc-stroke);
+    stroke-width: 2.4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    filter: drop-shadow(0 0 6px rgba(167, 139, 250, 0.6));
+    stroke-dasharray: 2000;
+    stroke-dashoffset: 2000;
+    animation: lcDraw 1.4s cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+  }
+  .lc-area { fill: url(#lc-fill); opacity: 0; animation: lcFade 0.9s ease 0.45s forwards; }
+  .lc-dot { fill: #e2e8f0; opacity: 0; animation: lcFade 0.35s ease 0.8s forwards; }
+  @keyframes lcDraw { to { stroke-dashoffset: 0; } }
+  @keyframes lcFade { to { opacity: 1; } }
+
+  /* 12-week focus heatmap (GitHub-style) */
+  .heatmap {
+    display: grid;
+    grid-auto-flow: column;
+    grid-template-rows: repeat(7, 10px);
+    grid-auto-columns: 1fr;
+    gap: 2px;
+    padding: 9px 11px;
+    margin-bottom: 14px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1.5px solid rgba(255, 255, 255, 0.12);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+  .hm-cell {
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.05);
+  }
+
+  /* Daily progress bar */
+  .progbar {
+    margin: 0 0 16px;
+    padding: 14px 16px;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1.5px solid rgba(255, 255, 255, 0.12);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+  .progbar-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+  .progbar-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #a5b4fc;
+  }
+  .progbar-pct { font-size: 13px; font-weight: 800; color: #a3e635; }
+  .progbar-track {
+    height: 12px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    overflow: hidden;
+  }
+  .progbar-fill {
+    height: 100%;
+    width: 0%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #34d399, #a3e635);
+    box-shadow: 0 0 12px rgba(163, 230, 53, 0.5);
+    transition: width 0.6s cubic-bezier(0.22, 0.61, 0.36, 1);
+  }
+  .progbar-time {
+    margin-top: 8px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #94a3b8;
+  }
+
+  /* Lists */
+  .section-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #a5b4fc;
+    margin: 6px 0 8px;
+  }
+  .list {
+    /* Flow into the page's own scroll instead of being tiny internal scroll
+       boxes — scroll the whole stats page to see every item. */
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding-right: 4px;
+    margin-bottom: 6px;
+  }
+  .list::-webkit-scrollbar { width: 5px; }
+  .list::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.18); border-radius: 999px; }
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 11px;
+    border-radius: 11px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .row .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row .time { color: #a5b4fc; font-weight: 700; white-space: nowrap; }
+  .row.deadline .time { color: #fb7185; }
+  .row .badge {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+  .badge.done { color: #dcfce7; background: rgba(52, 211, 153, 0.2); border: 1px solid rgba(52, 211, 153, 0.5); }
+  .badge.todo { color: #dbe4ff; background: rgba(99, 102, 241, 0.18); border: 1px solid rgba(99, 102, 241, 0.5); }
+  .empty { font-size: 12px; color: #64748b; padding: 8px 4px; }
+
+  .quote {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    font-size: 12px;
+    color: #c4b5fd;
+    text-align: center;
+    font-weight: 600;
+  }
+  /* Lightweight entrance (transform + opacity only — compositor-safe) */
+  .wrap { animation: winIn 0.24s cubic-bezier(0.22, 0.61, 0.36, 1) both; }
+  @keyframes winIn { from { opacity: 0; transform: translateY(8px) scale(0.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
+    /* Planner-matched accent (synced from the daily protocol) */
+  :root { --accent: 0, 242, 255; --accent-hex: #00f2ff; }
+  body[data-protocol="productive"] { --accent: 56, 189, 248;  --accent-hex: #38bdf8; }
+  body[data-protocol="workout"]    { --accent: 251, 113, 133; --accent-hex: #fb7185; }
+  body[data-protocol="rest"]       { --accent: 167, 139, 250; --accent-hex: #a78bfa; }
+  body[data-protocol="play"]       { --accent: 52, 211, 153;  --accent-hex: #34d399; }
+  /* Neon LED strip along the top edge (matches the planner) */
+  .wrap::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background: linear-gradient(90deg, rgba(34, 211, 238, 0.9), rgba(139, 92, 246, 0.95) 30%, rgba(236, 72, 153, 0.9) 60%, rgba(52, 211, 153, 0.9));
+    -webkit-mask: linear-gradient(180deg, #000 0 3px, transparent 3px 100%);
+    mask: linear-gradient(180deg, #000 0 3px, transparent 3px 100%);
+    opacity: 0.9;
+  }
+    /* Navy gradient border + black middle (matches the planner's colored panes) */
+  .wrap {
+    background:
+      linear-gradient(160deg, rgba(255, 255, 255, 0.08) 0%, transparent 40%),
+      radial-gradient(130% 90% at 0% 0%, rgba(30, 64, 175, 0.34), transparent 55%),
+      radial-gradient(130% 90% at 100% 100%, rgba(37, 99, 235, 0.26), transparent 55%),
+      rgba(2, 5, 11, 0.86);
+    border: 1.5px solid rgba(59, 130, 246, 0.5);
+    box-shadow:
+      inset 0 0 26px rgba(30, 64, 175, 0.24),
+      inset 0 1px 0 rgba(255, 255, 255, 0.16),
+      0 18px 50px rgba(0, 0, 0, 0.6),
+      0 0 0 1px rgba(59, 130, 246, 0.25),
+      0 0 36px rgba(30, 64, 175, 0.28);
+  }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="head">
+      <span class="logo">📊</span>
+      <span class="title">Today's Progress</span>
+      <span class="date" id="stats-date"></span>
+      <button class="close" id="stats-close" title="Close">✕</button>
+    </div>
+
+    <div class="hero">
+      <div class="ring">
+        <svg width="128" height="128" viewBox="0 0 128 128">
+          <defs>
+            <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#34d399"/>
+              <stop offset="100%" stop-color="#a3e635"/>
+            </linearGradient>
+          </defs>
+          <circle class="track" cx="64" cy="64" r="54" fill="none" stroke-width="11"/>
+          <circle class="fill" id="ring-fill" cx="64" cy="64" r="54" fill="none" stroke-width="11"
+                  stroke-dasharray="339.29" stroke-dashoffset="339.29"/>
+        </svg>
+        <div class="pct"><b id="pct-num">0%</b><span>progress</span></div>
+      </div>
+      <div class="hero-info">
+        <div class="greeting" id="greeting">Good morning</div>
+        <div class="sub" id="sub">Nothing logged yet today — add a task to get going.</div>
+      </div>
+    </div>
+
+    <div class="progbar">
+      <div class="progbar-head"><span class="progbar-label">📈 Daily Progress</span><span class="progbar-pct" id="progbar-pct">0%</span></div>
+      <div class="progbar-track"><div class="progbar-fill" id="progbar-fill"></div></div>
+      <div class="progbar-time" id="progbar-time">0m of 0m</div>
+    </div>
+
+    <div class="grid">
+      <div class="tile done"><div class="k">Tasks done</div><div class="v" id="t-done">0<small> / 0</small></div></div>
+      <div class="tile progress"><div class="k">Progress</div><div class="v" id="t-progress">0m</div></div>
+      <div class="tile focus"><div class="k">Focused</div><div class="v" id="t-focus">0m</div></div>
+      <div class="tile streak"><div class="k">Streak</div><div class="v" id="t-streak">🔥 0</div></div>
+    </div>
+
+    <div class="section-title">📈 Activity · last 7 days</div>
+    <div class="chart" id="chart"></div>
+
+    <div class="heat-head">
+      <span class="section-title">🔥 Focus heatmap · last 12 weeks</span>
+      <div class="heat-toggle">
+        <button class="ht-btn active" data-v="grid" type="button" title="Grid view">▦ Grid</button>
+        <button class="ht-btn" data-v="line" type="button" title="Line chart">📈 Line</button>
+      </div>
+    </div>
+    <div class="heatmap" id="heatmap"></div>
+    <div class="linechart" id="linechart" hidden></div>
+
+    <div class="section-title">⏰ Deadlines today</div>
+    <div class="list" id="deadlines-list"></div>
+
+    <div class="section-title">🎯 Tasks today</div>
+    <div class="list" id="tasks-list"></div>
+
+    <div class="quote" id="quote">Small progress is still progress. 🌻</div>
+  </div>
+
+  <script>
+    const api = window.electronAPI || { closeStats() {} };
+    document.getElementById('stats-close').addEventListener('click', () => api.closeStats());
+
+    const pad2 = (n) => String(n).padStart(2, '0');
+    const dayKey = (d) => d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const fmtMin = (m) => {
+      m = Math.round(m || 0);
+      if (m < 1) return '0m';
+      if (m < 60) return m + 'm';
+      const h = Math.floor(m / 60), r = m % 60;
+      return h + 'h' + (r ? ' ' + r + 'm' : '');
+    };
+    const fmtTime = (t) => {
+      if (!t) return '';
+      const d = new Date('2000-01-01T' + t);
+      return isNaN(d) ? t : d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    };
+
+    // 7-day activity bars: focused (timer) + completed-task minutes per day.
+    function renderChart(tasks, focusHistory) {
+      const chart = document.getElementById('chart');
+      if (!chart) return;
+      const now = new Date();
+      const days = [];
+      for (let i = 6; i >= 0; i--) {
+        const start = new Date(now);
+        start.setDate(now.getDate() - i);
+        start.setHours(0, 0, 0, 0);
+        const end = start.getTime() + 86400000;
+        const fmin = focusHistory
+          .filter(s => (s.time || 0) >= start.getTime() && (s.time || 0) < end)
+          .reduce((a, s) => a + (s.minutes || 0), 0);
+        const cmin = tasks
+          .filter(t => t.done && (t.completedAt || 0) >= start.getTime() && (t.completedAt || 0) < end)
+          .reduce((a, t) => a + Math.max(1, t.durationMin || 60), 0);
+        days.push({
+          label: i === 0 ? 'Today' : start.toLocaleDateString([], { weekday: 'short' }),
+          mins: Math.round(fmin + cmin),
+        });
+      }
+      const max = Math.max(30, ...days.map(d => d.mins));
+      chart.innerHTML = days.map(d => {
+        const pct = Math.max(3, Math.round((d.mins / max) * 100));
+        return '<div class="bar">' +
+          '<span class="bar-val">' + fmtMin(d.mins) + '</span>' +
+          '<div class="bar-track"><div class="bar-fill" style="height:' + pct + '%"></div></div>' +
+          '<span class="bar-day">' + d.label + '</span></div>';
+      }).join('');
+    }
+
+    // Shared daily activity data over the last 12 weeks (Mon→Sun aligned).
+    function computeDailyMins(tasks, focusHistory) {
+      const now = new Date();
+      const today = new Date(now); today.setHours(0, 0, 0, 0);
+      const dow = (today.getDay() + 6) % 7; // 0 = Mon … 6 = Sun
+      const start = new Date(today);
+      start.setDate(today.getDate() - dow - 7 * 11); // Monday 11 weeks back
+      const days = [];
+      let max = 0;
+      for (let i = 0; i < 84; i++) {
+        const d = new Date(start.getTime() + i * 86400000);
+        const dayStart = d.getTime();
+        const dayEnd = dayStart + 86400000;
+        let mins = 0;
+        focusHistory.forEach((s) => { if ((s.time || 0) >= dayStart && (s.time || 0) < dayEnd) mins += (s.minutes || 0); });
+        tasks.forEach((t) => { if (t.done && (t.completedAt || 0) >= dayStart && (t.completedAt || 0) < dayEnd) mins += Math.max(1, t.durationMin || 60); });
+        mins = Math.round(mins);
+        days.push({ d, key: dayStart, mins, future: dayStart > today.getTime() });
+        if (mins > max) max = mins;
+      }
+      return { days, max: Math.max(60, max) };
+    }
+
+    // GitHub-style heatmap of focused + completed minutes over the last 12
+    // weeks, aligned Mon→Sun (columns = weeks, rows = days).
+    let lastHeatHash = '';
+    function renderHeatmap(tasks, focusHistory) {
+      const el = document.getElementById('heatmap');
+      if (!el) return;
+      const { days, max } = computeDailyMins(tasks, focusHistory);
+      const hash = days.map((d) => d.mins).join(',') + '|' + max;
+      if (hash === lastHeatHash) return;
+      lastHeatHash = hash;
+      const cells = days.map((d) => {
+        const label = d.d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+        let bg = 'rgba(255,255,255,0.05)';
+        if (d.future) bg = 'rgba(255,255,255,0.02)';
+        else if (d.mins) {
+          const t = Math.min(1, d.mins / max);
+          bg = t < 0.25 ? 'rgba(163,230,53,0.18)'
+            : t < 0.5 ? 'rgba(163,230,53,0.4)'
+            : t < 0.75 ? 'rgba(163,230,53,0.65)'
+            : 'rgba(163,230,53,0.95)';
+        }
+        return '<div class="hm-cell" style="background:' + bg + '" title="' + esc(label + ' · ' + fmtMin(d.mins)) + '"></div>';
+      });
+      el.innerHTML = cells.join('');
+    }
+
+    // Line-chart view of the same 12 weeks: a gradient stroke with an animated
+    // draw-in and a soft area fill.
+    let lastLineHash = '';
+    function renderLineChart(tasks, focusHistory) {
+      const el = document.getElementById('linechart');
+      if (!el) return;
+      const { days, max } = computeDailyMins(tasks, focusHistory);
+      const hash = days.map((d) => d.mins).join(',') + '|' + max;
+      if (hash === lastLineHash) return;
+      lastLineHash = hash;
+      const W = 640, H = 170, PAD = 10;
+      const n = days.length;
+      const x = (i) => PAD + (i / (n - 1)) * (W - PAD * 2);
+      const y = (m) => H - PAD - (m / max) * (H - PAD * 2);
+      const pts = days.map((d, i) => x(i).toFixed(1) + ',' + y(d.mins).toFixed(1));
+      const line = 'M' + pts.join(' L');
+      const area = line + ' L' + x(n - 1).toFixed(1) + ',' + (H - PAD) + ' L' + x(0).toFixed(1) + ',' + (H - PAD) + ' Z';
+      const dots = days.map((d, i) => {
+        const label = d.d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+        return '<circle cx="' + x(i).toFixed(1) + '" cy="' + y(d.mins).toFixed(1) + '" r="2.4" class="lc-dot"><title>' + esc(label + ' · ' + fmtMin(d.mins)) + '</title></circle>';
+      }).join('');
+      el.innerHTML =
+        '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" aria-label="Activity line chart">' +
+          '<defs>' +
+            '<linearGradient id="lc-stroke" x1="0%" y1="0%" x2="100%" y2="0%">' +
+              '<stop offset="0%" stop-color="#22d3ee"/><stop offset="55%" stop-color="#a78bfa"/><stop offset="100%" stop-color="#f472b6"/>' +
+            '</linearGradient>' +
+            '<linearGradient id="lc-fill" x1="0%" y1="0%" x2="0%" y2="100%">' +
+              '<stop offset="0%" stop-color="rgba(167,139,250,0.42)"/><stop offset="100%" stop-color="rgba(167,139,250,0)"/>' +
+            '</linearGradient>' +
+          '</defs>' +
+          '<path class="lc-area" d="' + area + '"/>' +
+          '<path class="lc-line" d="' + line + '"/>' +
+          dots +
+        '</svg>';
+    }
+
+    // Grid / line toggle for the 12-week activity block.
+    let heatView = 'grid';
+    function applyHeatView() {
+      const heatmap = document.getElementById('heatmap');
+      const linechart = document.getElementById('linechart');
+      if (heatmap) heatmap.hidden = heatView !== 'grid';
+      if (linechart) linechart.hidden = heatView !== 'line';
+      document.querySelectorAll('.heat-toggle .ht-btn').forEach((b) => b.classList.toggle('active', b.dataset.v === heatView));
+    }
+    document.querySelectorAll('.heat-toggle .ht-btn').forEach((b) => {
+      b.addEventListener('click', () => { heatView = b.dataset.v; applyHeatView(); });
+    });
+
+    function load() {
+      let tasks = [], deadlines = [], streak = { last: '', count: 0 }, focusHistory = [];
+      try { tasks = JSON.parse(localStorage.getItem('wolf-tasks')) || []; } catch (e) {}
+      try { deadlines = JSON.parse(localStorage.getItem('wolf-deadlines')) || []; } catch (e) {}
+      try { streak = JSON.parse(localStorage.getItem('wolf-streak')) || { last: '', count: 0 }; } catch (e) {}
+      try { focusHistory = JSON.parse(localStorage.getItem('wolf-focus-history')) || []; } catch (e) {}
+      return { tasks, deadlines, streak, focusHistory };
+    }
+
+    const startOfToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); };
+
+    function renderFrom(data) {
+      const now = new Date();
+      const today = dayKey(now);
+      const d = data || load();
+      const tasks = Array.isArray(d.tasks) ? d.tasks : [];
+      const deadlines = Array.isArray(d.deadlines) ? d.deadlines : [];
+      const streak = d.streak || { last: '', count: 0 };
+      const focusHistory = Array.isArray(d.focusHistory) ? d.focusHistory : [];
+
+      document.getElementById('stats-date').textContent = now.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+      const h = now.getHours();
+      document.getElementById('greeting').textContent =
+        h < 5 ? 'Burning the midnight oil' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
+
+      // Today's tasks: dated today or undated, plus ones completed today.
+      const todaysTasks = tasks.filter(t => !t.due || t.due === today || (t.done && (t.completedAt || 0) >= startOfToday()));
+      const done = todaysTasks.filter(t => t.done).length;
+      const total = todaysTasks.length;
+      document.getElementById('t-done').innerHTML = done + '<small> / ' + total + '</small>';
+
+      // Time-weighted daily progress (mirrors the planner's daily bar): each
+      // of today's tasks contributes its duration; filled = logged progress
+      // (done tasks count full). Reads progressMin directly, so it reflects
+      // "mark progress" immediately no matter when it happened. This also
+      // drives the hero ring — progress, not just finished tasks.
+      let filledMin = 0, totalMin = 0;
+      todaysTasks.forEach((t) => {
+        const dur = Math.max(1, t.durationMin || 60);
+        totalMin += dur;
+        filledMin += t.done ? dur : Math.min(dur, t.progressMin || 0);
+      });
+      const progPct = totalMin ? Math.min(100, Math.round((filledMin / totalMin) * 100)) : 0;
+
+      document.getElementById('pct-num').textContent = progPct + '%';
+      const C = 339.29;
+      document.getElementById('ring-fill').style.strokeDashoffset = String(C - (C * progPct / 100));
+      document.getElementById('t-progress').textContent = fmtMin(filledMin);
+      document.getElementById('progbar-fill').style.width = progPct + '%';
+      document.getElementById('progbar-pct').textContent = progPct + '%';
+      document.getElementById('progbar-time').textContent = fmtMin(filledMin) + ' of ' + fmtMin(totalMin);
+
+      // Focus minutes today (focus timer sessions only).
+      const focusToday = focusHistory
+        .filter(s => s.kind !== 'progress' && (s.time || 0) >= startOfToday())
+        .reduce((a, s) => a + (s.minutes || 0), 0);
+      document.getElementById('t-focus').textContent = fmtMin(focusToday);
+
+      const streakCount = streak.last === today || streak.last === dayKey(new Date(now.getTime() - 86400000)) ? (streak.count || 0) : 0;
+      document.getElementById('t-streak').textContent = '🔥 ' + streakCount + (streakCount === 1 ? ' day' : ' days');
+
+      document.getElementById('sub').textContent =
+        totalMin === 0 ? 'Nothing planned yet today — add a task to get going.'
+        : progPct >= 100 ? 'All planned time logged — incredible work! 🎉'
+        : filledMin === 0 ? fmtMin(totalMin) + ' planned — mark progress to get going.'
+        : fmtMin(filledMin) + ' of ' + fmtMin(totalMin) + ' logged — keep the momentum going.';
+
+      // Activity graph: focused + completed minutes per day over the last 7 days.
+      renderChart(tasks, focusHistory);
+      renderHeatmap(tasks, focusHistory);
+      renderLineChart(tasks, focusHistory);
+      applyHeatView();
+
+      // Deadlines today (with a time), sorted by time.
+      const dls = deadlines
+        .filter(d => !d.done && d.due === today)
+        .sort((a, b) => (a.time || '99:99').localeCompare(b.time || '99:99'));
+      const dlEl = document.getElementById('deadlines-list');
+      if (!dls.length) dlEl.innerHTML = '<div class="empty">No deadlines today — enjoy the calm. ☕</div>';
+      else dlEl.innerHTML = dls.map(d =>
+        '<div class="row deadline"><span class="name">⏰ ' + esc(d.name) + '</span><span class="time">' + esc(fmtTime(d.time)) + '</span></div>').join('');
+
+      // Tasks today: open ones first, then done.
+      const tks = todaysTasks
+        .filter(t => !t.done)
+        .sort((a, b) => (a.due || '9999').localeCompare(b.due || '9999'))
+        .concat(todaysTasks.filter(t => t.done));
+      const tkEl = document.getElementById('tasks-list');
+      if (!tks.length) tkEl.innerHTML = '<div class="empty">No tasks today — add one and watch this fill up. ✨</div>';
+      else tkEl.innerHTML = tks.map(t =>
+        '<div class="row"><span class="name">' + (t.done ? '✅ ' : '▢ ') + esc(t.name) + '</span>' +
+        (t.durationMin ? '<span class="time">' + esc(fmtMin(t.durationMin)) + '</span>' : '') +
+        '<span class="badge ' + (t.done ? 'done' : 'todo') + '">' + (t.done ? 'Done' : 'To do') + '</span></div>').join('');
+
+      const quotes = ["You're doing great today! ✨", 'Every step forward counts. 🌱', "Take a deep breath — you've got this. 💪", 'Small progress is still progress. 🌻', 'You are capable of amazing things. ⭐', 'One task at a time. You rule! 🎯'];
+      document.getElementById('quote').textContent = quotes[Math.floor(Math.random() * quotes.length)];
+    }
+
+    // Primary: the planner renderer pushes a fresh snapshot over IPC the
+    // moment data changes. We ALSO ask for the current snapshot on a timer —
+    // the request round-trips through the planner (the data owner) over IPC,
+    // so the dashboard stays correct even if a push is missed or the file://
+    // localStorage isn't shared across windows. localStorage is only a last
+    // fallback for the very first paint.
+    if (api.onStatsData) api.onStatsData((payload) => renderFrom(payload));
+    function refresh() {
+      if (api.requestStats) api.requestStats();
+      else renderFrom(load());
+    }
+    refresh();
+    renderFrom(load());
+    setInterval(refresh, 2000);
+  </script>
+<script>
+  (function () {
+    var api = window.electronAPI;
+    function apply(p) {
+      if (p === 'productive' || p === 'workout' || p === 'rest' || p === 'play') document.body.dataset.protocol = p;
+      else delete document.body.dataset.protocol;
+    }
+    if (api && api.onProtocol) api.onProtocol(apply);
+    if (api && api.getProtocol) api.getProtocol();
+  })();
+</script>
+  <script src="summon.js"></script>
+</body>
+</html>

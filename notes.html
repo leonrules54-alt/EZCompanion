@@ -29,17 +29,17 @@
     display: flex;
     flex-direction: column;
     border-radius: 18px;
-    background: rgba(9, 14, 27, 0.82);
-    backdrop-filter: blur(14px) saturate(1.3) brightness(1.04);
-    -webkit-backdrop-filter: blur(14px) saturate(1.3) brightness(1.04);
-    border: 2px solid rgba(167, 139, 250, 0.45);
-    border-top: 1.5px solid rgba(255, 255, 255, 0.5);
+    background: rgba(13, 17, 23, 0.88);
+    backdrop-filter: blur(16px) saturate(1.35) brightness(1.05);
+    -webkit-backdrop-filter: blur(16px) saturate(1.35) brightness(1.05);
+    border: 1px solid rgba(var(--accent), 0.25);
+    border-top: 1px solid rgba(255, 255, 255, 0.45);
     box-shadow:
-      0 14px 44px rgba(0, 0, 0, 0.5),
-      0 0 34px rgba(251, 191, 36, 0.22),
-      0 0 0 1.5px rgba(167, 139, 250, 0.28),
-      0 0 22px rgba(139, 92, 246, 0.18),
-      inset 0 1px 0 rgba(255, 255, 255, 0.16);
+      inset 0 0 12px rgba(var(--accent), 0.08),
+      inset 0 1px 0 rgba(255, 255, 255, 0.18),
+      0 14px 44px rgba(0, 0, 0, 0.55),
+      0 0 0 1px rgba(var(--accent), 0.12),
+      0 0 30px rgba(var(--accent), 0.10);
     overflow: hidden;
   }
   /* LED light strip along the top edge (matches the app's planner glass) */
@@ -128,27 +128,29 @@
     box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.18), 0 0 18px rgba(99, 102, 241, 0.22);
   }
   #notes-input::placeholder { color: rgba(157, 171, 207, 0.7); }
-  #notes-save {
-    flex-shrink: 0;
-    border: none;
-    border-radius: 12px;
-    padding: 10px;
-    font-family: inherit;
-    font-size: 13px;
-    font-weight: 800;
-    letter-spacing: 0.03em;
+  .new {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    border: 1.5px solid rgba(163, 230, 53, 0.5);
+    background: rgba(163, 230, 53, 0.12);
+    color: #d9f99d;
+    font-size: 15px;
+    line-height: 1;
     cursor: pointer;
-    color: #0b1020;
-    background: #22d3ee;
-    box-shadow: 0 3px 14px rgba(99, 102, 241, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
     transition: all 0.15s;
   }
-  #notes-save:hover {
-    filter: brightness(1.12) saturate(1.05);
-    transform: translateY(-1px);
-    box-shadow: 0 6px 22px rgba(99, 102, 241, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  .new:hover {
+    background: rgba(163, 230, 53, 0.28);
+    color: #fff;
+    transform: scale(1.1);
+    border-color: rgba(163, 230, 53, 0.85);
+    box-shadow: 0 0 12px rgba(163, 230, 53, 0.45);
   }
-  #notes-save:active { transform: scale(0.97); }
+  .new:active { transform: scale(0.94); }
   /* Notes list: items show up to 2 lines so you can see more at a glance */
   .list {
     flex: 1 1 0;
@@ -278,7 +280,43 @@
   }
   .mini-tip.visible { opacity: 1; transform: translateY(0); }
 
-</style>
+  /* Lightweight entrance (transform + opacity only — compositor-safe) */
+  #notes-glass { animation: winIn 0.24s cubic-bezier(0.22, 0.61, 0.36, 1) both; }
+  @keyframes winIn { from { opacity: 0; transform: translateY(8px) scale(0.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
+    /* Planner-matched accent (synced from the daily protocol) */
+  :root { --accent: 0, 242, 255; --accent-hex: #00f2ff; }
+  body[data-protocol="productive"] { --accent: 56, 189, 248;  --accent-hex: #38bdf8; }
+  body[data-protocol="workout"]    { --accent: 251, 113, 133; --accent-hex: #fb7185; }
+  body[data-protocol="rest"]       { --accent: 167, 139, 250; --accent-hex: #a78bfa; }
+  body[data-protocol="play"]       { --accent: 52, 211, 153;  --accent-hex: #34d399; }
+  /* Neon LED strip along the top edge (matches the planner) */
+  #notes-glass::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background: linear-gradient(90deg, rgba(34, 211, 238, 0.9), rgba(139, 92, 246, 0.95) 30%, rgba(236, 72, 153, 0.9) 60%, rgba(52, 211, 153, 0.9));
+    -webkit-mask: linear-gradient(180deg, #000 0 3px, transparent 3px 100%);
+    mask: linear-gradient(180deg, #000 0 3px, transparent 3px 100%);
+    opacity: 0.9;
+  }
+    /* Navy gradient border + black middle (matches the planner's colored panes) */
+  #notes-glass {
+    background:
+      linear-gradient(160deg, rgba(255, 255, 255, 0.08) 0%, transparent 40%),
+      radial-gradient(130% 90% at 0% 0%, rgba(30, 64, 175, 0.34), transparent 55%),
+      radial-gradient(130% 90% at 100% 100%, rgba(37, 99, 235, 0.26), transparent 55%),
+      rgba(2, 5, 11, 0.86);
+    border: 1.5px solid rgba(59, 130, 246, 0.5);
+    box-shadow:
+      inset 0 0 26px rgba(30, 64, 175, 0.24),
+      inset 0 1px 0 rgba(255, 255, 255, 0.16),
+      0 18px 50px rgba(0, 0, 0, 0.6),
+      0 0 0 1px rgba(59, 130, 246, 0.25),
+      0 0 36px rgba(30, 64, 175, 0.28);
+  }
+  </style>
 <script>
   // The app ships with a single signature look: the black glass theme.
   document.body.dataset.theme = 'black';
@@ -288,11 +326,11 @@
   <div id="notes-glass">
     <div class="head">
       <span class="title">📝 Quick Notes</span>
+      <button class="new" id="notes-new" title="New note">＋</button>
       <button class="close" id="notes-close" title="Close">✕</button>
     </div>
     <div class="body">
-      <textarea id="notes-input" placeholder="Write a quick note…"></textarea>
-      <button id="notes-save">Save note</button>
+      <textarea id="notes-input" placeholder="Write a quick note… (saves automatically)"></textarea>
       <div class="list" id="notes-list"></div>
     </div>
   </div>
@@ -356,15 +394,22 @@
     }
     function save() { localStorage.setItem('wolf-notes', JSON.stringify(notes)); }
 
-    // id of the note being edited (null = composing a brand-new note).
-    let editingId = null;
+    // The note currently shown in the textarea. null = composing a fresh note.
+    // It persists (key 'wolf-notes-open') so the last note you were reading
+    // stays open the next time you open Quick Notes.
+    let openId = null;
 
     const input = document.getElementById('notes-input');
     const listEl = document.getElementById('notes-list');
-    const saveBtn = document.getElementById('notes-save');
 
-    function updateSaveLabel() {
-      saveBtn.textContent = editingId !== null ? 'Update note ✏️' : 'Save note';
+    function persistOpen() {
+      try { localStorage.setItem('wolf-notes-open', openId == null ? '' : String(openId)); } catch (e) {}
+    }
+    function readOpen() {
+      try {
+        const v = localStorage.getItem('wolf-notes-open');
+        return v ? Number(v) : null;
+      } catch (e) { return null; }
     }
 
     function timeAgo(ts) {
@@ -379,6 +424,7 @@
     }
 
     function render() {
+      const prevScroll = listEl.scrollTop;
       listEl.innerHTML = '';
       if (!notes.length) {
         listEl.innerHTML = '<div class="note-empty">No notes yet — jot something down! ✍️</div>';
@@ -413,26 +459,19 @@
         delBtn.addEventListener('click', (ev) => {
           ev.stopPropagation();
           notes = notes.filter((x) => x.id !== n.id);
-          if (editingId === n.id) { editingId = null; updateSaveLabel(); }
+          if (openId === n.id) { openId = null; input.value = ''; persistOpen(); }
           save();
           render();
         });
         acts.append(copyBtn, delBtn);
 
         row.append(txt, meta, acts);
-        // Click a saved note to load it into the big textarea for editing —
-        // it stays in place and gets updated on save (never duplicated).
-        row.addEventListener('click', () => {
-          editingId = n.id;
-          input.value = n.text;
-          updateSaveLabel();
-          render(); // re-highlight the editing note
-          input.focus();
-          input.setSelectionRange(input.value.length, input.value.length);
-        });
-        if (n.id === editingId) row.classList.add('editing');
+        // Click a saved note to open it in the big textarea.
+        row.addEventListener('click', () => openNote(n.id));
+        if (n.id === openId) row.classList.add('editing');
         listEl.appendChild(row);
       });
+      listEl.scrollTop = Math.min(prevScroll, listEl.scrollHeight);
     }
 
     function flash(btn) {
@@ -441,30 +480,76 @@
       setTimeout(() => { btn.style.background = ''; btn.style.color = ''; }, 350);
     }
 
-    function saveCurrentNote() {
-      const text = input.value.trim();
-      if (!text) { input.focus(); return; }
-      if (editingId !== null) {
-        // Editing: update the existing note in place (text + timestamp),
-        // keeping its position in the list — no duplicate is created.
-        const n = notes.find((x) => x.id === editingId);
-        if (n) { n.text = text; n.time = Date.now(); }
-        editingId = null;
-      } else {
-        notes.unshift({ id: Date.now(), text, time: Date.now() });
-        notes = notes.slice(0, 50);
-      }
-      save();
+    function openNote(id) {
+      openId = id;
+      const n = notes.find((x) => x.id === id);
+      input.value = n ? n.text : '';
+      persistOpen();
+      render();
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+    }
+
+    function newNote() {
+      flushSave(); // commit anything still pending before starting fresh
+      openId = null;
       input.value = '';
-      updateSaveLabel();
+      persistOpen();
       render();
       input.focus();
     }
 
-    document.getElementById('notes-save').addEventListener('click', saveCurrentNote);
-    document.getElementById('notes-close').addEventListener('click', () => { if (api.closeNotes) api.closeNotes(); });
-    input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) saveCurrentNote(); });
+    // Autosave: typing updates the open note in place and saves in real time
+    // (debounced so localStorage isn't thrashed on every keystroke).
+    let saveTimer = null;
+    function scheduleSave() {
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(flushSave, 350);
+    }
+    function flushSave() {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+      const text = input.value.trim();
+      if (!text) {
+        // Empty note: drop the one we were editing (an empty note is useless).
+        if (openId != null) {
+          notes = notes.filter((x) => x.id !== openId);
+          openId = null;
+          persistOpen();
+          save();
+          render();
+        }
+        return;
+      }
+      if (openId != null) {
+        const n = notes.find((x) => x.id === openId);
+        if (n) { n.text = text; n.time = Date.now(); }
+        else openId = null; // note deleted elsewhere — fall through to create
+      }
+      if (openId == null) {
+        openId = Date.now();
+        notes.unshift({ id: openId, text, time: Date.now() });
+        notes = notes.slice(0, 50);
+        persistOpen();
+      }
+      save();
+      render();
+    }
 
+    input.addEventListener('input', scheduleSave);
+    input.addEventListener('blur', flushSave);
+    document.getElementById('notes-new').addEventListener('click', newNote);
+    document.getElementById('notes-close').addEventListener('click', () => {
+      flushSave();
+      if (api.closeNotes) api.closeNotes();
+    });
+
+    // Restore the last-open note (or the most recent one on first ever open).
+    const savedId = readOpen();
+    const initial = notes.find((x) => x.id === savedId) || notes[0] || null;
+    openId = initial ? initial.id : null;
+    input.value = initial ? initial.text : '';
+    persistOpen();
     render();
     // Focus the textarea once the window is actually visible — main.js shows
     // the window after the page finishes loading, so a focus() at parse time
@@ -472,5 +557,17 @@
     window.addEventListener('focus', () => input.focus());
     setTimeout(() => input.focus(), 60);
   </script>
+<script>
+  (function () {
+    var api = window.electronAPI;
+    function apply(p) {
+      if (p === 'productive' || p === 'workout' || p === 'rest' || p === 'play') document.body.dataset.protocol = p;
+      else delete document.body.dataset.protocol;
+    }
+    if (api && api.onProtocol) api.onProtocol(apply);
+    if (api && api.getProtocol) api.getProtocol();
+  })();
+</script>
+  <script src="summon.js"></script>
 </body>
 </html>

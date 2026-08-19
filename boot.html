@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Systems Check</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    background: transparent;
+    overflow: hidden;
+    font-family: 'Comfortaa', 'Segoe UI', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    cursor: pointer;
+    color: #d6ecff;
+  }
+
+  /* --- ACT 1: the scan ---
+     A horizontal beam "shoots" out from the center, expands to full width,
+     then a vertical light sweeps the whole screen top-to-bottom. The screen
+     dims briefly so the light reads as an energy scan. All transform/opacity. */
+
+  /* Dim the whole screen during the scan */
+  #veil {
+    position: absolute; inset: 0;
+    background: radial-gradient(circle at 50% 50%, rgba(4, 10, 22, 0.55), rgba(2, 5, 12, 0.92) 100%);
+    opacity: 0;
+    animation: veilIn 0.6s ease 0.15s forwards;
+  }
+  @keyframes veilIn { to { opacity: 1; } }
+
+  /* Horizontal energy beam: expands from center to the full screen width */
+  #beam {
+    position: absolute;
+    left: 0; right: 0;
+    top: 46%;
+    height: 3px;
+    background: linear-gradient(90deg, transparent, #22d3ee 20%, #e0f2fe 50%, #a78bfa 80%, transparent);
+    box-shadow: 0 0 26px 6px rgba(34, 211, 238, 0.75), 0 0 80px 24px rgba(34, 211, 238, 0.35);
+    transform: scaleX(0);
+    transform-origin: center;
+    animation: beamOut 1.1s cubic-bezier(0.22, 0.61, 0.36, 1) 0.3s forwards;
+    opacity: 0;
+  }
+  @keyframes beamOut {
+    0%   { transform: scaleX(0); opacity: 0; }
+    30%  { transform: scaleX(1); opacity: 1; }
+    100% { transform: scaleX(1); opacity: 0; }
+  }
+
+  /* Vertical scan sweep: a bright band travels down the whole screen */
+  #sweep {
+    position: absolute;
+    left: 0; right: 0;
+    top: -12%;
+    height: 12%;
+    background: linear-gradient(180deg, transparent, rgba(34, 211, 238, 0.22) 40%, rgba(224, 242, 254, 0.55) 50%, rgba(167, 139, 250, 0.22) 60%, transparent);
+    mix-blend-mode: screen;
+    animation: sweepDown 2.2s cubic-bezier(0.4, 0, 0.2, 1) 0.6s forwards;
+  }
+  @keyframes sweepDown { from { transform: translateY(0); } to { transform: translateY(1000%); } }
+
+  /* Horizontal grid lines that fade in as the sweep passes (scan HUD feel) */
+  #grid {
+    position: absolute; inset: 0;
+    background:
+      repeating-linear-gradient(180deg, rgba(34, 211, 238, 0.05) 0 1px, transparent 1px 84px),
+      repeating-linear-gradient(90deg, rgba(34, 211, 238, 0.04) 0 1px, transparent 1px 160px);
+    opacity: 0;
+    animation: gridIn 0.6s ease 1.7s forwards;
+  }
+  @keyframes gridIn { to { opacity: 1; } }
+
+  /* --- ACT 2: the status card pops up in the center --- */
+  #card {
+    position: absolute;
+    left: 50%; top: 50%;
+    width: min(780px, 92vw);
+    transform: translate(-50%, -50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 30px 44px 30px;
+    border-radius: 26px;
+    background:
+      radial-gradient(120% 80% at 50% -10%, rgba(26, 40, 80, 0.94) 0%, rgba(9, 13, 24, 0.97) 52%, rgba(4, 6, 12, 0.99) 100%);
+    border: 1px solid rgba(34, 211, 238, 0.3);
+    border-top: 1px solid rgba(255, 255, 255, 0.38);
+    box-shadow:
+      inset 0 0 46px rgba(30, 64, 175, 0.24),
+      0 0 0 1px rgba(34, 211, 238, 0.12),
+      0 40px 110px rgba(0, 0, 0, 0.7),
+      0 0 90px rgba(34, 211, 238, 0.16);
+    opacity: 0;
+    animation: cardIn 0.55s cubic-bezier(0.22, 0.61, 0.36, 1) 2.0s forwards;
+    overflow: hidden;
+  }
+  @keyframes cardIn { from { opacity: 0; transform: translate(-50%, -48%) scale(0.94); } to { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
+
+  .scanline {
+    position: absolute;
+    left: 0; right: 0; top: -30%;
+    height: 34%;
+    background: linear-gradient(180deg, transparent, rgba(34, 211, 238, 0.08), rgba(167, 139, 250, 0.11), transparent);
+    mix-blend-mode: screen;
+    pointer-events: none;
+    animation: cardScan 0.8s ease 2.05s forwards;
+  }
+  @keyframes cardScan { from { transform: translateY(0); } to { transform: translateY(320%); } }
+
+  .core {
+    position: relative;
+    width: 176px;
+    height: 176px;
+    flex: 0 0 auto;
+    margin: 4px auto 12px;
+    animation: coreFloat 4.5s ease-in-out 2.1s infinite;
+  }
+  .core svg { width: 100%; height: 100%; display: block; }
+  @keyframes coreFloat {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-7px); }
+  }
+  /* Tick ring slowly rotates; yellow status arc + triangle gently pulse. */
+  .ticks {
+    transform-origin: center;
+    transform-box: fill-box;
+    animation: spinSlow 26s linear infinite;
+  }
+  @keyframes spinSlow { to { transform: rotate(360deg); } }
+  .arc { animation: arcPulse 3s ease-in-out infinite; }
+  @keyframes arcPulse { 0%, 100% { opacity: 0.72; } 50% { opacity: 1; } }
+  .tri { animation: triPulse 2.6s ease-in-out infinite; }
+  @keyframes triPulse { 0%, 100% { opacity: 0.85; } 50% { opacity: 1; } }
+
+  .name {
+    font-size: 24px; font-weight: 800; letter-spacing: 0.16em;
+    color: #eaf6ff; text-shadow: 0 0 20px rgba(34, 211, 238, 0.55);
+  }
+  .sub {
+    margin-top: 5px;
+    font-size: 11px; font-weight: 700; letter-spacing: 0.4em;
+    color: #7dd3fc; text-transform: uppercase;
+  }
+
+  .divider {
+    width: 100%;
+    height: 1px;
+    margin: 20px 0 14px;
+    background: linear-gradient(90deg, transparent, rgba(34, 211, 238, 0.4), transparent);
+  }
+
+  .status { width: 100%; flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 2px; }
+  .row {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    padding: 8px 4px;
+    font-size: 15px;
+    font-weight: 700;
+    opacity: 0;
+    animation: rowIn 0.5s ease forwards;
+  }
+  .row .k {
+    flex: 0 0 128px;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.18em;
+    color: #7dd3fc;
+    text-transform: uppercase;
+  }
+  .row .leader {
+    flex: 1;
+    border-bottom: 1px dotted rgba(124, 158, 200, 0.2);
+    transform: translateY(-4px);
+  }
+  .row .v { color: #d6ecff; text-shadow: 0 0 10px rgba(34, 211, 238, 0.38); }
+  .row:nth-child(1) { animation-delay: 2.2s; }
+  .row:nth-child(2) { animation-delay: 2.36s; }
+  .row:nth-child(3) { animation-delay: 2.52s; }
+  .row:nth-child(4) { animation-delay: 2.68s; }
+  .row:nth-child(5) { animation-delay: 2.84s; }
+  .row:nth-child(6) { animation-delay: 3.0s; }
+  .row:nth-child(7) { animation-delay: 3.16s; }
+  @keyframes rowIn { from { opacity: 0; transform: translateX(-12px); } to { opacity: 1; transform: translateX(0); } }
+
+  .bar {
+    width: 100%;
+    height: 4px;
+    margin: 16px 2px 0;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    overflow: hidden;
+  }
+  .fill {
+    height: 100%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #1e40af, #34d399);
+    box-shadow: 0 0 12px rgba(52, 211, 153, 0.6);
+    transform: scaleX(0);
+    transform-origin: left;
+    animation: fill 1.6s cubic-bezier(0.22, 0.61, 0.36, 1) 2.35s forwards;
+  }
+  @keyframes fill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+  .cta {
+    margin-top: 20px;
+    padding: 12px 30px;
+    border-radius: 999px;
+    border: 1px solid rgba(34, 211, 238, 0.45);
+    background: rgba(34, 211, 238, 0.09);
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: #7dd3fc;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.15), 0 0 18px rgba(34, 211, 238, 0.12);
+    opacity: 0;
+    animation: ctaIn 0.5s ease 3.35s forwards;
+  }
+  @keyframes ctaIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
+  /* --- ACT 3: dismissal (click) ---
+     The whole stage glides away: the card shrinks slightly and fades while
+     the veil lifts, so the planner appears underneath instead of the boot
+     window just vanishing. */
+  body.leaving #veil { animation: veilOut 0.34s ease forwards; }
+  @keyframes veilOut { to { opacity: 0; } }
+  body.leaving #card {
+    animation: cardOut 0.34s cubic-bezier(0.4, 0, 1, 1) forwards;
+    pointer-events: none;
+  }
+  @keyframes cardOut {
+    to { opacity: 0; transform: translate(-50%, -50%) scale(1.04); }
+  }
+  body.leaving #beam, body.leaving #sweep, body.leaving #grid { opacity: 0; transition: opacity 0.3s ease; }
+</style>
+</head>
+<body>
+  <div id="veil"></div>
+  <div id="beam"></div>
+  <div id="sweep"></div>
+  <div id="grid"></div>
+
+  <div id="card">
+    <div class="scanline"></div>
+    <div class="core">
+      <svg viewBox="0 0 200 200">
+        <defs>
+          <linearGradient id="triGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#e0f2fe"/>
+            <stop offset="0.5" stop-color="#22d3ee"/>
+            <stop offset="1" stop-color="#0ea5e9"/>
+          </linearGradient>
+          <radialGradient id="coreGrad" cx="50%" cy="50%" r="50%">
+            <stop offset="0" stop-color="#0c1c36"/>
+            <stop offset="1" stop-color="#050a14"/>
+          </radialGradient>
+          <filter id="triGlow" x="-60%" y="-60%" width="220%" height="220%">
+            <feGaussianBlur stdDeviation="3.2" result="b"/>
+            <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+        </defs>
+
+        <!-- outer casing -->
+        <circle cx="100" cy="100" r="92" fill="#0b1220" stroke="#22d3ee" stroke-width="2.5"/>
+        <circle cx="100" cy="100" r="88" fill="none" stroke="#67e8f9" stroke-width="0.8" opacity="0.5"/>
+
+        <!-- radial tick marks (slowly rotating) -->
+        <g class="ticks">
+          <circle cx="100" cy="100" r="81" fill="none" stroke="#9adcff" stroke-width="3.4" stroke-dasharray="1.6 7.4"/>
+        </g>
+
+        <!-- protruding panels (top-left, bottom-right) -->
+        <g stroke="#22d3ee" stroke-width="6" stroke-linecap="round" fill="none">
+          <path d="M 100 9 A 91 91 0 0 1 113 16" transform="rotate(-45 100 100)"/>
+          <path d="M 100 9 A 91 91 0 0 1 113 16" transform="rotate(135 100 100)"/>
+        </g>
+
+        <!-- middle ring band -->
+        <circle cx="100" cy="100" r="68" fill="none" stroke="#12233f" stroke-width="11"/>
+        <circle cx="100" cy="100" r="68" fill="none" stroke="#22d3ee" stroke-width="1" opacity="0.45"/>
+        <path class="arc" d="M 100 32 A 68 68 0 0 1 32 100" fill="none" stroke="#fbbf24" stroke-width="5" stroke-linecap="round"/>
+
+        <!-- node markers -->
+        <circle cx="100" cy="32" r="3.6" fill="#22d3ee"/>
+        <circle cx="100" cy="168" r="3.6" fill="#22d3ee"/>
+
+        <!-- inner track -->
+        <circle cx="100" cy="100" r="52" fill="none" stroke="#38bdf8" stroke-width="1" opacity="0.5"/>
+
+        <!-- inner core + radar crosshairs -->
+        <circle cx="100" cy="100" r="44" fill="url(#coreGrad)" stroke="#22d3ee" stroke-width="1.3"/>
+        <g stroke="#38bdf8" stroke-width="0.8" opacity="0.55">
+          <line x1="57" y1="100" x2="143" y2="100"/>
+          <line x1="100" y1="57" x2="100" y2="143"/>
+          <line x1="70" y1="70" x2="130" y2="130"/>
+          <line x1="130" y1="70" x2="70" y2="130"/>
+        </g>
+        <circle cx="100" cy="100" r="22" fill="none" stroke="#38bdf8" stroke-width="0.6" opacity="0.4"/>
+
+        <!-- central inverted triangle (glowing) -->
+        <g class="tri" filter="url(#triGlow)">
+          <polygon points="72,86 128,86 100,124" fill="url(#triGrad)" stroke="#e0f2fe" stroke-width="2.2" stroke-linejoin="round"/>
+          <polygon points="84,96 116,96 100,114" fill="#e0f2fe" opacity="0.95"/>
+        </g>
+
+        <!-- X marker box -->
+        <g>
+          <rect x="92" y="130" width="16" height="13" rx="2.5" fill="#0b1220" stroke="#38bdf8" stroke-width="0.9"/>
+          <line x1="95.5" y1="133.5" x2="104.5" y2="139.5" stroke="#38bdf8" stroke-width="0.9"/>
+          <line x1="104.5" y1="133.5" x2="95.5" y2="139.5" stroke="#38bdf8" stroke-width="0.9"/>
+        </g>
+      </svg>
+    </div>
+    <div class="name">EZCOMPANION</div>
+    <div class="sub">Systems Check</div>
+    <div class="divider"></div>
+    <div class="status" id="status"></div>
+    <div class="bar"><div class="fill"></div></div>
+    <div class="cta">Click to continue</div>
+  </div>
+
+  <script src="weather.js"></script>
+  <script>
+    const api = window.electronAPI || {};
+    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+    const pad2 = (n) => String(n).padStart(2, '0');
+    const dayKey = (d) => d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+    const fmtMin = (m) => { m = Math.round(m || 0); if (m < 1) return '0m'; if (m < 60) return m + 'm'; return Math.floor(m / 60) + 'h' + (m % 60 ? ' ' + (m % 60) + 'm' : ''); };
+
+    function row(label, value) {
+      return '<div class="row"><span class="k">' + label + '</span><span class="leader"></span><span class="v">' + esc(value) + '</span></div>';
+    }
+
+    function computeValues(data) {
+      const d = data || {};
+      const tasks = Array.isArray(d.tasks) ? d.tasks : [];
+      const deadlines = Array.isArray(d.deadlines) ? d.deadlines : [];
+      const streak = d.streak || { count: 0 };
+      const focusHistory = Array.isArray(d.focusHistory) ? d.focusHistory : [];
+      const today = dayKey(new Date());
+      const open = tasks.filter((t) => !t.done);
+      const dueToday = open.filter((t) => t.due === today).length;
+      const dlsToday = deadlines.filter((x) => !x.done && x.due === today).length;
+      const start = new Date(); start.setHours(0, 0, 0, 0);
+      const focusToday = focusHistory.filter((s) => (s.time || 0) >= start.getTime()).reduce((a, s) => a + (s.minutes || 0), 0);
+      return [
+        ['CORE', 'ONLINE'],
+        ['TASKS', open.length + ' OPEN · ' + dueToday + ' DUE TODAY'],
+        ['DEADLINES', dlsToday + ' TODAY'],
+        ['FOCUS', fmtMin(focusToday) + ' TODAY'],
+        ['STREAK', '🔥 ' + (streak.count || 0) + ' DAY' + ((streak.count || 0) === 1 ? '' : 'S')],
+        ['WEATHER', 'ACQUIRING…'],
+        ['STATUS', 'ALL SYSTEMS GO'],
+      ];
+    }
+
+    let painted = false;
+    function render(data) {
+      const values = computeValues(data);
+      const el = document.getElementById('status');
+      if (!painted) {
+        el.innerHTML = values.map((v) => row(v[0], v[1])).join('');
+        painted = true;
+        return;
+      }
+      const vs = el.querySelectorAll('.row .v');
+      values.forEach((v, i) => { if (vs[i]) vs[i].textContent = v[1]; });
+    }
+
+    function fillWeather() {
+      if (!window.WolfWeather || !window.WolfWeather.get) return;
+      window.WolfWeather.get().then((w) => {
+        const wx = document.querySelector('#status .row:nth-child(6) .v');
+        if (wx) wx.textContent = (w && w.ok ? (w.temp || '—') + ' · ' + (w.desc || '') : 'OFFLINE');
+      });
+    }
+
+    function request() { if (api.requestStats) api.requestStats(); }
+    if (api.onStatsData) api.onStatsData(render);
+    render();
+    fillWeather();
+    request();
+    setInterval(request, 2000);
+
+    // The scan must fully play out no matter what — clicks are ignored until
+    // the "CLICK TO CONTINUE" prompt has appeared (~3.3s).
+    let ready = false;
+    let leaving = false;
+    setTimeout(() => { ready = true; }, 3300);
+    document.body.addEventListener('click', () => {
+      if (!ready || leaving) return;
+      // Play the dismissal animation first, then hand over to main — the
+      // planner fades up underneath while the Jarvis card glides away.
+      leaving = true;
+      document.body.classList.add('leaving');
+      setTimeout(() => { if (api.bootContinue) api.bootContinue(); }, 340);
+    });
+  </script>
+</body>
+</html>
