@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<title>EZCompanion</title>
+<title>Halo</title>
 <meta charset="UTF-8">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -184,14 +184,15 @@
   </style>
 <script>
   // The app ships with a single signature look: the black glass theme.
-  document.body.dataset.theme = 'black';
+  // (Script lives in <head>, so guard — body doesn't exist until parsed.)
+  if (document.body) document.body.dataset.theme = 'black';
 </script>
 </head>
 <body>
 <div id="status" data-summon>
   <span class="brand">
-    <span class="brand-mark">E</span>
-    <span class="appname">EZCompanion</span>
+    <span class="brand-mark">H</span>
+    <span class="appname">Halo</span>
   </span>
   <span class="divider"></span>
   <span class="spacer"></span>

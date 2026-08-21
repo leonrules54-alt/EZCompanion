@@ -82,7 +82,7 @@ class CDP {
 let proc = null;
 async function main() {
   proc = spawn(electronPath, ['--remote-debugging-port=' + PORT, '.', '--disable-gpu'], {
-    cwd: root, env: { ...process.env, WOLF_DEBUG: '1' }, stdio: 'ignore',
+    cwd: root, env: { ...process.env, HALO_DEBUG: '1' }, stdio: 'ignore',
   });
   console.log('app pid:', proc.pid, '...');
 

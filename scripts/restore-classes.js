@@ -64,7 +64,7 @@ class CDP {
 let proc = null;
 (async () => {
   proc = spawn(electronPath, ['--remote-debugging-port=' + PORT, '.', '--disable-gpu'], {
-    cwd: root, env: { ...process.env, WOLF_DEBUG: '1' }, stdio: 'ignore',
+    cwd: root, env: { ...process.env, HALO_DEBUG: '1' }, stdio: 'ignore',
   });
   const target = await waitForTarget('app.html');
   const c = await CDP.connect(target.webSocketDebuggerUrl);

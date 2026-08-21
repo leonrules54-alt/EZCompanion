@@ -65,7 +65,7 @@ let proc = null;
 (async () => {
   const profile = path.join(os.tmpdir(), 'wolf-repair-' + Date.now());
   proc = spawn(electronPath, ['--remote-debugging-port=9350', '--user-data-dir=' + profile, '.', '--disable-gpu'], {
-    cwd: root, env: { ...process.env, WOLF_DEBUG: '1' }, stdio: 'ignore',
+    cwd: root, env: { ...process.env, HALO_DEBUG: '1' }, stdio: 'ignore',
   });
   const target = await waitForTarget(9350, 'app.html');
   const c = await CDP.connect(target.webSocketDebuggerUrl);

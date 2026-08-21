@@ -14,7 +14,7 @@
  *   6. Always cleans up the temp build dir (even on failure)
  *
  * Usage:  npm run make:installer
- * Output: dist/Wolf Pet-<version>-Setup.exe, dist/Wolf Pet-<version>-win32-x64.zip
+ * Output: dist/Halo-<version>-Setup.exe, dist/Halo-<version>-win32-x64.zip
  *
  * Env:  FORGE_OUT=dir   override the temporary build directory (e.g. to keep
  *                       out/ in the project for debugging)
@@ -34,7 +34,7 @@ const ICON = path.join(ROOT, 'build', 'icon.ico');
 const FORGE_ENTRY = path.join(ROOT, 'node_modules', '@electron-forge', 'cli', 'dist', 'electron-forge.js');
 
 const USER_FORGE_OUT = !!process.env.FORGE_OUT;
-const BUILD_ROOT = process.env.FORGE_OUT || fs.mkdtempSync(path.join(os.tmpdir(), 'wolf-pet-build-'));
+const BUILD_ROOT = process.env.FORGE_OUT || fs.mkdtempSync(path.join(os.tmpdir(), 'halo-build-'));
 
 const START = Date.now();
 function log(msg) { console.log('\n[make-installer] ' + msg); }

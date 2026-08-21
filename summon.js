@@ -20,10 +20,10 @@
   // Inject the keyframes once per window (each window has its own document).
   var style = document.createElement('style');
   style.textContent =
-    '@keyframes wolfSummonIn { from { opacity: 0; transform: translateY(10px) scale(0.97); } to { opacity: 1; transform: translateY(0) scale(1); } }\n' +
-    '.summon-in { animation: wolfSummonIn 0.28s cubic-bezier(0.22, 0.61, 0.36, 1) both !important; }\n' +
-    '@keyframes wolfSummonOut { from { opacity: 1; transform: translateY(0) scale(1); } to { opacity: 0; transform: translateY(8px) scale(0.98); } }\n' +
-    '.summon-out { animation: wolfSummonOut 0.16s cubic-bezier(0.4, 0, 1, 1) both !important; }';
+    '@keyframes haloSummonIn { from { opacity: 0; transform: translateY(10px) scale(0.97); } to { opacity: 1; transform: translateY(0) scale(1); } }\n' +
+    '.summon-in { animation: haloSummonIn 0.28s cubic-bezier(0.22, 0.61, 0.36, 1) both !important; }\n' +
+    '@keyframes haloSummonOut { from { opacity: 1; transform: translateY(0) scale(1); } to { opacity: 0; transform: translateY(8px) scale(0.98); } }\n' +
+    '.summon-out { animation: haloSummonOut 0.16s cubic-bezier(0.4, 0, 1, 1) both !important; }';
   document.head.appendChild(style);
 
   function animateIn() {

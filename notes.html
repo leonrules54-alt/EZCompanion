@@ -116,7 +116,7 @@
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
     color: #e8edff;
     font-family: inherit;
-    font-size: 13px;
+    font-size: 12px;
     line-height: 1.55;
     outline: none;
     caret-color: #22d3ee;
@@ -201,7 +201,7 @@
   .note-text {
     flex: 1;
     min-width: 0;
-    font-size: 12px;
+    font-size: 11.5px;
     color: #e8edff;
     line-height: 1.45;
     display: -webkit-box;
@@ -319,7 +319,7 @@
   </style>
 <script>
   // The app ships with a single signature look: the black glass theme.
-  document.body.dataset.theme = 'black';
+  if (document.body) document.body.dataset.theme = 'black'; // <head> script — body may not exist yet
 </script>
 </head>
 <body>

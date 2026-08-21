@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>EZCompanion Focus</title>
+<title>Halo Focus</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -213,7 +213,7 @@
   </style>
 <script>
   // The app ships with a single signature look: the black glass theme.
-  document.body.dataset.theme = 'black';
+  if (document.body) document.body.dataset.theme = 'black'; // <head> script — body may not exist yet
 </script>
 </head>
 <body>

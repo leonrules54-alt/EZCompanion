@@ -78,7 +78,7 @@ async function ask(model, request, state) {
       'Content-Type': 'application/json',
       Authorization: 'Bearer ' + key,
       'HTTP-Referer': 'https://localhost',
-      'X-Title': 'Wolf Assistant',
+      'X-Title': 'Halo Assistant',
     },
     body: JSON.stringify({
       model,

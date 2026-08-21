@@ -318,7 +318,7 @@
         </g>
       </svg>
     </div>
-    <div class="name">EZCOMPANION</div>
+    <div class="name">HALO</div>
     <div class="sub">Systems Check</div>
     <div class="divider"></div>
     <div class="status" id="status"></div>
@@ -375,8 +375,8 @@
     }
 
     function fillWeather() {
-      if (!window.WolfWeather || !window.WolfWeather.get) return;
-      window.WolfWeather.get().then((w) => {
+      if (!window.HaloWeather || !window.HaloWeather.get) return;
+      window.HaloWeather.get().then((w) => {
         const wx = document.querySelector('#status .row:nth-child(6) .v');
         if (wx) wx.textContent = (w && w.ok ? (w.temp || '—') + ' · ' + (w.desc || '') : 'OFFLINE');
       });

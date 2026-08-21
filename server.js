@@ -6,7 +6,7 @@ const path = require('path');
 // The Electron app does NOT need this server: main.js loads its windows over
 // the file:// protocol via loadAppFile(). This server is only useful for
 // `npm start` browser previews, or as a dev server for the renderer by
-// running Electron with WOLF_DEV_URL=http://localhost:3737.
+// running Electron with HALO_DEV_URL=http://localhost:3737.
 //
 // The root URL serves index.html, which IS the landing page (landing was
 // renamed to index.html so the Vercel deployment serves it natively). The
@@ -53,7 +53,7 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`\n  🐺 Wolf Pet preview: http://localhost:${PORT} (browser preview only — Electron loads local files)\n`);
+  console.log(`\n  🐺 Halo preview: http://localhost:${PORT} (browser preview only — Electron loads local files)\n`);
 });
 server.on('error', (err) => {
   if (err.code === 'EADDRINUSE') {

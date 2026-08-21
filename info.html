@@ -185,11 +185,11 @@
     ];
     document.getElementById('i-quote').textContent = QUOTES[Math.floor(Math.random() * QUOTES.length)];
 
-    // Live forecast via the shared WolfWeather module (Open-Meteo, cached in
+    // Live forecast via the shared HaloWeather module (Open-Meteo, cached in
     // localStorage so this window and the planner reuse one fetch).
     async function renderWeather() {
-      const w = (window.WolfWeather && window.WolfWeather.get)
-        ? await window.WolfWeather.get()
+      const w = (window.HaloWeather && window.HaloWeather.get)
+        ? await window.HaloWeather.get()
         : { ok: false, icon: '—', temp: '', desc: 'Weather unavailable', city: '' };
       document.getElementById('i-wicon').textContent = w.icon || '—';
       document.getElementById('i-wtemp').textContent = w.temp || '';

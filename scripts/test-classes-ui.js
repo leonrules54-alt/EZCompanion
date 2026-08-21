@@ -71,7 +71,7 @@ const check = (label, cond, extra) => {
 (async () => {
   const tmpProfile = path.join(require('os').tmpdir(), 'wolf-classes-test-' + Date.now());
   proc = spawn(electronPath, ['--remote-debugging-port=' + PORT, '--user-data-dir=' + tmpProfile, '.', '--disable-gpu'], {
-    cwd: root, env: { ...process.env, WOLF_DEBUG: '1' }, stdio: 'ignore',
+    cwd: root, env: { ...process.env, HALO_DEBUG: '1' }, stdio: 'ignore',
   });
   const petTarget = await waitForTarget('app.html');
   const pet = await CDP.connect(petTarget.webSocketDebuggerUrl);

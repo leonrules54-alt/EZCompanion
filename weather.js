@@ -1,9 +1,9 @@
-/* === Wolf Weather — real forecast via Open-Meteo (free, no key) ===
+/* === Halo Weather — real forecast via Open-Meteo (free, no key) ===
    Shared by the planner popup (app.html) and the Info window (info.html).
    Geolocates by IP (ipwho.is) once, then fetches the current forecast +
    today's high/low. Location and the forecast are cached in localStorage so
    both windows share one fetch and the card still works offline (last known
-   good). Loaded as a classic <script> — sets window.WolfWeather.get(). */
+   good). Loaded as a classic <script> — sets window.HaloWeather.get(). */
 (function () {
   'use strict';
   const LOC_KEY = 'wolf-location';
@@ -99,5 +99,5 @@
     }
   }
 
-  window.WolfWeather = { get };
+  window.HaloWeather = { get };
 })();

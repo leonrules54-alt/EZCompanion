@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>EZCompanion Week</title>
+<title>Halo Week</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -286,7 +286,7 @@
   </style>
 <script>
   // The app ships with a single signature look: the black glass theme.
-  document.body.dataset.theme = 'black';
+  if (document.body) document.body.dataset.theme = 'black'; // <head> script — body may not exist yet
 </script>
 </head>
 <body>
@@ -462,8 +462,11 @@
 
     render();
     // The sidebar saves tasks/deadlines to localStorage; poll so the strip
-    // stays in sync without needing cross-window messaging.
-    setInterval(render, 4000);
+    // stays in sync without needing cross-window messaging. Skipped while the
+    // window is hidden (it's hidden, not closed, when the view switches away)
+    // and re-run the moment it's shown again.
+    setInterval(() => { if (!document.hidden) render(); }, 4000);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) { render(); sendBounds(); } });
     window.addEventListener('resize', sendBounds);
   </script>
 <script>

@@ -715,12 +715,18 @@
     // fallback for the very first paint.
     if (api.onStatsData) api.onStatsData((payload) => renderFrom(payload));
     function refresh() {
+      // The window is hidden (not closed) once the user dismisses it, and with
+      // backgroundThrottling off the 2s poll would otherwise keep round-tripping
+      // a full stats snapshot over IPC forever while invisible.
+      if (document.hidden) return;
       if (api.requestStats) api.requestStats();
       else renderFrom(load());
     }
     refresh();
     renderFrom(load());
     setInterval(refresh, 2000);
+    // Pull a fresh snapshot the moment the window is shown again.
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
   </script>
 <script>
   (function () {

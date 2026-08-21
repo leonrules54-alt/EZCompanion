@@ -8,10 +8,10 @@ name: Build & release installers
 #
 # The Release is created automatically and receives these assets (named to
 # match the landing page links):
-#   - TaskCompanion-Setup.exe   (Windows installer)
-#   - TaskCompanion.dmg         (macOS installer)
-#   - TaskCompanion-Windows.zip (portable Windows build)
-#   - TaskCompanion-macOS.zip   (portable macOS build)
+#   - Halo-Setup.exe   (Windows installer)
+#   - Halo.dmg         (macOS installer)
+#   - Halo-Windows.zip (portable Windows build)
+#   - Halo-macOS.zip   (portable macOS build)
 
 on:
   push:
@@ -46,8 +46,12 @@ jobs:
         shell: bash
         run: |
           mkdir -p release
-          cp "$(find out/make -name '*Setup.exe' | head -1)" release/TaskCompanion-Setup.exe
-          cp "$(find out/make -name '*.zip' | head -1)" release/TaskCompanion-Windows.zip
+          # Match only THIS version's artifacts — a stale zip/exe from an
+          # earlier local build would otherwise be picked up by a bare
+          # `find ... | head -1` and uploaded under the wrong name.
+          VERSION="$(node -p "require('./package.json').version")"
+          cp "$(find out/make -name "*${VERSION}*Setup.exe" | head -1)" release/Halo-Setup.exe
+          cp "$(find out/make -name "*${VERSION}*.zip" | head -1)" release/Halo-Windows.zip
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
@@ -83,8 +87,11 @@ jobs:
         shell: bash
         run: |
           mkdir -p release
-          cp "$(find out/make -name '*.dmg' | head -1)" release/TaskCompanion.dmg
-          cp "$(find out/make -name '*.zip' | head -1)" release/TaskCompanion-macOS.zip
+          # Match only THIS version's artifacts (see the Windows job for why
+          # a bare find+head can silently pick up stale builds).
+          VERSION="$(node -p "require('./package.json').version")"
+          cp "$(find out/make -name "*${VERSION}*.dmg" | head -1)" release/Halo.dmg
+          cp "$(find out/make -name "*${VERSION}*.zip" | head -1)" release/Halo-macOS.zip
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2

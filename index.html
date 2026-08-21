@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Task Companion — Your planner, always one keystroke away</title>
-<meta name="description" content="Task Companion is a sleek desktop productivity app with custom hotkeys, local-first data, and lightning-fast quick-add tasks.">
+<title>Halo — Your planner, always one keystroke away</title>
+<meta name="description" content="Halo is a sleek desktop productivity app with custom hotkeys, local-first data, and lightning-fast quick-add tasks.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
@@ -268,6 +268,22 @@
     gap: 7px;
   }
   .hero-cta .meta svg { opacity: 0.8; }
+  .mac-help, .win-help {
+    max-width: 560px;
+    margin: 8px auto 0;
+    padding: 11px 18px;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--text-dim);
+    background: var(--glass);
+    border: 1px solid var(--hairline);
+    border-radius: 12px;
+    backdrop-filter: blur(14px) saturate(1.4);
+    -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  }
+  .mac-help strong, .win-help strong { color: var(--text-hi); font-weight: 600; }
+  .win-help a { color: var(--accent-cyan); text-decoration: none; font-weight: 600; }
+  .win-help a:hover { text-decoration: underline; }
 
   /* === Preview window === */
   .preview { padding-bottom: clamp(48px, 8vw, 90px); }
@@ -459,8 +475,8 @@
     <!-- Top bar -->
     <header class="topbar">
       <div class="brand">
-        <span class="brand-mark" aria-hidden="true">✓</span>
-        Task&nbsp;Companion
+        <span class="brand-mark" aria-hidden="true">H</span>
+        Halo
       </div>
       <nav class="topbar-links" aria-label="Primary">
         <a href="#preview">Preview</a>
@@ -473,23 +489,30 @@
     <!-- Hero -->
     <section class="hero">
       <span class="eyebrow"><span class="dot"></span> ✨ Now available for Windows &amp; macOS</span>
-      <h1>Task Companion</h1>
+      <h1>Halo</h1>
       <p class="tagline">A sleek desktop planner that lives on your screen, not in a tab.
         <strong>Custom hotkeys</strong>, <strong>local-only data</strong>, and
         <strong>quick-add tasks</strong> — all in one glassy companion.</p>
       <div class="hero-cta" id="download">
         <div class="cta-row">
-          <a class="btn btn-primary" href="https://github.com/leonrules54-alt/EZCompanion/releases/download/v2.0.1/TaskCompanion-Setup.exe">
+          <a class="btn btn-primary" href="https://github.com/leonrules54-alt/EZCompanion/releases/download/v2.1.0/Halo-Setup.exe">
             <span aria-hidden="true">🪟</span> Download for Windows
           </a>
-          <a class="btn btn-ghost" href="https://github.com/leonrules54-alt/EZCompanion/releases/download/v2.0.1/TaskCompanion.dmg">
+          <a class="btn btn-ghost" href="https://github.com/leonrules54-alt/EZCompanion/releases/download/v2.1.0/Halo.dmg">
             <span aria-hidden="true">🍎</span> Download for macOS
           </a>
         </div>
         <span class="meta">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-          Free · v2.0.1 · Installer (~156 MB)
+          Free · v2.1.0 · Installer (~135 MB)
         </span>
+        <div class="win-help" role="note">
+          <strong>🪟 Windows says "protected your PC"?</strong> The installer isn't code-signed yet, so SmartScreen shows a one-time warning — click <strong>More info</strong> → <strong>Run anyway</strong>. No admin rights?
+          <a href="https://github.com/leonrules54-alt/EZCompanion/releases/download/v2.1.0/Halo-Windows.zip">Grab the portable zip</a> instead — unzip and run, nothing to install.
+        </div>
+        <div class="mac-help" role="note">
+          <strong>🍎 First time on Mac?</strong> Right-click the app and choose <strong>Open</strong> — Apple shows a one-time warning because the app isn't signed. After that it opens normally.
+        </div>
       </div>
     </section>
 
@@ -498,11 +521,11 @@
       <div class="window">
         <div class="win-bar">
           <div class="win-dots" aria-hidden="true"><i></i><i></i><i></i></div>
-          <span class="win-title">Task Companion — planner preview</span>
+          <span class="win-title">Halo — planner preview</span>
           <div class="win-dots" aria-hidden="true" style="visibility:hidden"><i></i><i></i><i></i></div>
         </div>
         <div class="shot">
-          <img class="shot-img" src="landing-preview-desktop.png" alt="Task Companion planner showing daily tasks, deadlines and a month calendar" width="1440" height="900" loading="lazy">
+          <img class="shot-img" src="landing-preview-desktop.png" alt="Halo planner showing daily tasks, deadlines and a month calendar" width="1440" height="900" loading="lazy">
         </div>
       </div>
     </section>
@@ -539,7 +562,7 @@
     <!-- Footer -->
     <footer>
       <div class="foot">
-        <span>© 2026 Task Companion · Built with <span class="heart">♥</span> for people who get things done</span>
+        <span>© 2026 Halo · Built with <span class="heart">♥</span> for people who get things done</span>
         <span>Windows 10 &amp; 11</span>
       </div>
     </footer>

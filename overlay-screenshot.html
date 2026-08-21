@@ -104,7 +104,7 @@
   const box = document.getElementById('selection-box');
 
   document.addEventListener('mousedown', (e) => {
-    if (!active) return;
+    if (!active || e.button !== 0) return;
     startX = e.clientX; // window-relative: main adds the display origin
     startY = e.clientY;
     box.style.display = 'block';
@@ -128,16 +128,20 @@
 
   document.addEventListener('mouseup', (e) => {
     if (!active || !startX) return;
-    active = false;
     const x = Math.min(startX, e.clientX);
     const y = Math.min(startY, e.clientY);
     const w = Math.abs(e.clientX - startX);
     const h = Math.abs(e.clientY - startY);
     box.style.display = 'none';
     if (w >= 5 && h >= 5) {
+      active = false;
       api.captureScreenshotAndClose({ x: Math.round(x), y: Math.round(y), width: Math.round(w), height: Math.round(h) });
     } else {
-      api.cancelScreenshot();
+      // A bare click (or a stray click — a ghost click, a stuck button, a
+      // slip before the drag starts) must NOT kill the capture tool. Reset
+      // the selection start so the next drag works; Esc is the only cancel.
+      startX = null;
+      startY = null;
     }
   });
 

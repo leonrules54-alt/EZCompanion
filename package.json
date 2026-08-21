@@ -1,9 +1,9 @@
 {
-  "name": "wolf-pet",
-  "productName": "Wolf Pet",
-  "version": "2.0.2",
-  "description": "Desktop wolf pet with mini-garden, weather popup, and productivity tools",
-  "author": "Wolf Pet",
+  "name": "halo",
+  "productName": "Halo",
+  "version": "2.1.0",
+  "description": "Halo — a sleek desktop companion with planner, weather popup, and productivity tools",
+  "author": "Halo",
   "main": "main.js",
   "scripts": {
     "start": "electron .",

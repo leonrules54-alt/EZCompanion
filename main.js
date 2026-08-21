@@ -4,18 +4,18 @@ const crypto = require('crypto');
 // Bumped whenever the summon/wake/screen logic changes — shown in the tray
 // menu so a running app can be identified as new or stale at a glance.
 const BUILD_TAG = 'summon-v14';
-const WOLF_DEBUG = !!process.env.WOLF_DEBUG;
-// dlog() keeps the old console behavior when WOLF_DEBUG is set, and ALWAYS
-// appends to a per-launch debug log (userData/wolf-debug.log) so window/
+const HALO_DEBUG = !!process.env.HALO_DEBUG;
+// dlog() keeps the old console behavior when HALO_DEBUG is set, and ALWAYS
+// appends to a per-launch debug log (userData/halo-debug.log) so window/
 // summon/multi-monitor decisions can be diagnosed straight from the file —
 // no terminal or env var needed. The log is truncated on each launch and
 // capped at 512KB.
-const debugLogPath = () => path.join(app.getPath('userData'), 'wolf-debug.log');
+const debugLogPath = () => path.join(app.getPath('userData'), 'halo-debug.log');
 let debugLogReady = false;
 let debugLogSize = 0;
 function dlog(...args) {
   const line = args.map((a) => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' ');
-  if (WOLF_DEBUG) console.log('[wolf-debug]', line);
+  if (HALO_DEBUG) console.log('[halo-debug]', line);
   try {
     if (!debugLogReady) {
       fs.writeFileSync(debugLogPath(), ''); // fresh log per launch
@@ -38,15 +38,15 @@ const { spawn } = require('child_process');
 // The app is fully self-contained: every window loads its bundled HTML over
 // the file:// protocol, so Electron never depends on an external localhost
 // URL. server.js is only an optional static preview for plain browsers.
-// If you explicitly want a dev server to serve the renderer, set WOLF_DEV_URL
-// to its base URL (e.g. WOLF_DEV_URL=http://localhost:3737 npm run electron)
+// If you explicitly want a dev server to serve the renderer, set HALO_DEV_URL
+// to its base URL (e.g. HALO_DEV_URL=http://localhost:3737 npm run electron)
 // and the windows will load from there instead.
-const WOLF_DEV_URL = process.env.WOLF_DEV_URL ? String(process.env.WOLF_DEV_URL).replace(/\/+$/, '') : null;
+const HALO_DEV_URL = process.env.HALO_DEV_URL ? String(process.env.HALO_DEV_URL).replace(/\/+$/, '') : null;
 
 function loadAppFile(win, file) {
   if (!win || win.isDestroyed()) return;
-  if (WOLF_DEV_URL) {
-    win.loadURL(`${WOLF_DEV_URL}/${file}`);
+  if (HALO_DEV_URL) {
+    win.loadURL(`${HALO_DEV_URL}/${file}`);
   } else {
     win.loadFile(path.join(__dirname, file)); // file:// protocol
   }
@@ -67,8 +67,8 @@ function hardenWindow(win) {
     let allowed = false;
     try {
       const parsed = new URL(url);
-      allowed = WOLF_DEV_URL
-        ? parsed.origin === new URL(WOLF_DEV_URL).origin
+      allowed = HALO_DEV_URL
+        ? parsed.origin === new URL(HALO_DEV_URL).origin
         : parsed.protocol === 'file:' && fileURLToPath(parsed).startsWith(path.join(__dirname, path.sep));
     } catch (e) { /* unparseable URL: treat as disallowed */ }
     if (!allowed) {
@@ -145,9 +145,10 @@ function anchorDisplay() {
 // pill in the top-right corner. The planner (deadlines + daily tasks) fills
 // the whole window.
 const SIDEBAR_W = 430;
-// The planner starts a little lower than the old 58px so the status strip
-// has breathing room and the whole app feels less "hugged" against the top.
-const SIDEBAR_TOP = 78;
+// The planner sits right under the status strip (6..52px), so the top edge
+// lands just 2px below it — the app reads as one continuous dock instead of
+// floating lower with a gap above the strip.
+const SIDEBAR_TOP = 54;
 
 // Sidebar height for a given work-area height: full height minus the status
 // strip (a touch longer than the old layout), with a 480px floor for tiny
@@ -386,7 +387,7 @@ const TOP_Y = 24;
 // Stats dashboard. Notes and Info share the TOP row (Notes left, Info fills
 // the space to its right); Stats fills everything below. The layout is the
 // same in every view — in Week view it just drops below the week strip.
-const NOTES_W = 340;
+const NOTES_W = 400;
 const NOTES_H = 320;
 const STATS_MIN_W = 480;
 let notesWindow = null;
@@ -572,6 +573,11 @@ function closeAssistantWindow() {
 const CHAT_TRIGGER_SIZE = 76;
 let chatTriggerWindow = null;
 let chatTriggerPoll = null;
+// Last known bubble hover state, so the poll only toggles click-through and
+// re-paints the bubble when it actually changes. Calling setIgnoreMouseEvents
+// + webContents.send on EVERY tick (90ms) is constant Windows compositor +
+// renderer churn that drags the whole desktop down.
+let chatTriggerHover = false;
 
 // The 💬 bubble stays in the top-left corner in every view, right where the
 // AI chat opens.
@@ -607,21 +613,26 @@ function createChatTriggerWindow() {
   loadAppFile(chatTriggerWindow, 'chat-trigger.html');
   watchRenderer(chatTriggerWindow, 'chat-trigger');
   chatTriggerWindow.setIgnoreMouseEvents(true, { forward: true });
+  chatTriggerHover = false; // the new window starts click-through — keep the poll's state in sync
   chatTriggerWindow.on('closed', () => {
     chatTriggerWindow = null;
+    chatTriggerHover = false;
     if (chatTriggerPoll) { clearInterval(chatTriggerPoll); chatTriggerPoll = null; }
   });
 
   // Click-through except over the bubble: poll the cursor under it.
   if (chatTriggerPoll) clearInterval(chatTriggerPoll);
   chatTriggerPoll = setInterval(() => {
-    if (!chatTriggerWindow || chatTriggerWindow.isDestroyed()) return;
+    if (!chatTriggerWindow || chatTriggerWindow.isDestroyed() || !chatTriggerWindow.isVisible()) return;
     const pos = screen.getCursorScreenPoint();
     const b = chatTriggerWindow.getBounds();
     const cx = b.x + b.width / 2, cy = b.y + b.height / 2;
     const over = Math.hypot(pos.x - cx, pos.y - cy) <= 42;
-    chatTriggerWindow.setIgnoreMouseEvents(!over, { forward: true });
-    chatTriggerWindow.webContents.send('button-hover', { chatHover: over });
+    if (over !== chatTriggerHover) {
+      chatTriggerHover = over;
+      chatTriggerWindow.setIgnoreMouseEvents(!over, { forward: true });
+      chatTriggerWindow.webContents.send('button-hover', { chatHover: over });
+    }
   }, 90);
 }
 
@@ -951,6 +962,9 @@ function restoreModeWindows() {
 let weekWindow = null;
 let weekBounds = [];           // window-relative interactive regions
 let weekPollInterval = null;
+// Last applied click-through state for the strip, so the poll only calls
+// setIgnoreMouseEvents when it changes (every-tick toggling is costly).
+let weekMouseIgnored = true;
 
 function createWeekWindow() {
   if (weekWindow) return;
@@ -985,9 +999,11 @@ function createWeekWindow() {
   loadAppFile(weekWindow, 'week.html');
   watchRenderer(weekWindow, 'week');
   weekWindow.setIgnoreMouseEvents(true, { forward: true });
+  weekMouseIgnored = true;
   weekWindow.on('closed', () => {
     weekWindow = null;
     weekBounds = [];
+    weekMouseIgnored = true;
     if (weekPollInterval) { clearInterval(weekPollInterval); weekPollInterval = null; }
   });
 
@@ -995,7 +1011,10 @@ function createWeekWindow() {
   if (weekPollInterval) clearInterval(weekPollInterval);
   weekPollInterval = setInterval(() => {
     if (!weekWindow || weekWindow.isDestroyed() || !weekWindow.isVisible()) return;
-    if (sleeping || peekActive) { weekWindow.setIgnoreMouseEvents(true, { forward: true }); return; }
+    if (sleeping || peekActive) {
+      if (!weekMouseIgnored) { weekMouseIgnored = true; weekWindow.setIgnoreMouseEvents(true, { forward: true }); }
+      return;
+    }
     const pos = screen.getCursorScreenPoint();
     const b = weekWindow.getBounds();
     let hit = false;
@@ -1003,7 +1022,11 @@ function createWeekWindow() {
       const rx = pos.x - b.x, ry = pos.y - b.y;
       if (rx >= r.x && rx <= r.x + r.w && ry >= r.y && ry <= r.y + r.h) { hit = true; break; }
     }
-    weekWindow.setIgnoreMouseEvents(!hit, { forward: true });
+    const ignore = !hit;
+    if (ignore !== weekMouseIgnored) {
+      weekMouseIgnored = ignore;
+      weekWindow.setIgnoreMouseEvents(ignore, { forward: true });
+    }
   }, 90);
 }
 
@@ -1088,10 +1111,12 @@ function createScreenshotOverlay(display) {
 
   hardenWindow(screenshotOverlay);
   loadAppFile(screenshotOverlay, 'overlay-screenshot.html');
-  screenshotOverlay.on('closed', () => { screenshotOverlay = null; });
+  screenshotOverlay.webContents.on('render-process-gone', (_e, details) => dlog('overlay renderer gone:', details && details.reason));
+  screenshotOverlay.on('closed', () => { dlog('overlay window closed'); screenshotOverlay = null; });
 }
 
-function closeScreenshotOverlay() {
+function closeScreenshotOverlay(reason) {
+  dlog('closeScreenshotOverlay', reason || '', 'existing:', !!screenshotOverlay);
   lastScreenshotOpen = 0; // allow an immediate re-open after cancel/capture
   if (screenshotOverlay) {
     screenshotOverlay.close();
@@ -1280,6 +1305,12 @@ function setPeek(active) {
     if (infoWindow && !infoWindow.isDestroyed() && infoWindow.isVisible()) {
       infoHiddenBySleep = true;
       hideCardWindow(infoWindow);
+    }
+    // Same for Notes — every popup card must clear the screen while
+    // peeking, not just assistant/stats/info.
+    if (notesWindow && !notesWindow.isDestroyed() && notesWindow.isVisible()) {
+      notesHiddenBySleep = true;
+      hideCardWindow(notesWindow);
     }
     hideHoverCard();
   } else if (!sleeping) {
@@ -1535,7 +1566,7 @@ function ensureWindowsVisible() {
 ipcMain.handle('export-data', async (_e, json) => {
   try {
     const res = await dialog.showSaveDialog({
-      title: 'Export Wolf data',
+      title: 'Export Halo data',
       defaultPath: 'wolf-data-' + new Date().toISOString().slice(0, 10) + '.json',
       filters: [{ name: 'JSON', extensions: ['json'] }],
     });
@@ -1685,7 +1716,7 @@ ipcMain.on('deadline-alert-ack', (_e, id) => {
 ipcMain.on('conflict-resolve', (_e, id) => { sendToPet('conflict-resolve', { id }); });
 
 // Screenshot overlay (triggered from the ring menu's Screenshot action)
-ipcMain.on('open-screenshot-overlay', () => openScreenshotOverlay());
+ipcMain.on('open-screenshot-overlay', () => { dlog('open-screenshot-overlay IPC received'); openScreenshotOverlay(); });
 
 ipcMain.on('capture-screenshot-close', async (event, region) => {
   // Hide the overlay + app chrome BEFORE grabbing the screen — otherwise the
@@ -1698,6 +1729,9 @@ ipcMain.on('capture-screenshot-close', async (event, region) => {
   if (notesWindow && !notesWindow.isDestroyed()) { notesHideForCapture = true; notesWindow.hide(); }
   if (deadlineAlertWindow && !deadlineAlertWindow.isDestroyed()) deadlineAlertWindow.hide();
   if (chatTriggerWindow && !chatTriggerWindow.isDestroyed()) chatTriggerWindow.hide();
+  const assistantWasVisible = assistantWindow && !assistantWindow.isDestroyed() && assistantWindow.isVisible();
+  if (assistantWasVisible) assistantWindow.hide();
+  hideHoverCard(); // the preview card must not float into the shot either
   const statsWasVisible = statsWindow && !statsWindow.isDestroyed() && statsWindow.isVisible();
   if (statsWasVisible) statsWindow.hide();
   const infoWasVisible = infoWindow && !infoWindow.isDestroyed() && infoWindow.isVisible();
@@ -1721,6 +1755,7 @@ ipcMain.on('capture-screenshot-close', async (event, region) => {
 
     if (chatTriggerWindow && !chatTriggerWindow.isDestroyed()) chatTriggerWindow.show();
     if (notesWindow && !notesWindow.isDestroyed()) notesWindow.show();
+    if (assistantWasVisible && assistantWindow && !assistantWindow.isDestroyed()) assistantWindow.show();
     if (statsWasVisible && statsWindow && !statsWindow.isDestroyed()) statsWindow.show();
     if (infoWasVisible && infoWindow && !infoWindow.isDestroyed()) infoWindow.show();
     notesHideForCapture = false;
@@ -1734,7 +1769,8 @@ ipcMain.on('capture-screenshot-close', async (event, region) => {
 });
 
 ipcMain.on('cancel-screenshot', () => {
-  closeScreenshotOverlay();
+  dlog('cancel-screenshot IPC received');
+  closeScreenshotOverlay('cancel-ipc');
 });
 
 // Union of all display bounds — the area a 'screen' capture thumbnail spans.
@@ -1898,6 +1934,12 @@ function broadcastClipboardHistory() {
 
 function startClipboardWatcher() {
   try { lastClipboardText = clipboard.readText() || ''; } catch (e) {}
+  // Text is cheap to poll every 800ms, but images are NOT: readImage() +
+  // toPNG() + SHA-1 on a large screenshot every tick is heavy (a copied 4K
+  // screenshot can cost tens of ms of main-process CPU per pass). The image
+  // branch only runs every 4th tick (~3.2s) — screenshots still land in the
+  // vault within a few seconds, without the constant hash hammering.
+  let imgTick = 0;
   setInterval(() => {
     let t = '';
     try { t = clipboard.readText() || ''; } catch (e) {}
@@ -1905,6 +1947,8 @@ function startClipboardWatcher() {
       lastClipboardText = t;
       pushClipboardItem({ type: 'text', text: t });
     }
+    imgTick++;
+    if (imgTick % 4 !== 0) return;
     // Images (screenshots, copied pictures): content-hash dedupe so the
     // same picture never appears twice.
     let img = null;
@@ -1955,7 +1999,7 @@ function startCursorPolling() {
       }
     }
     setMouseIgnored(!hit);
-  }, 60);
+  }, 100);
 }
 
 function stopPolling() {
@@ -2005,7 +2049,7 @@ function createTray() {
     icon = nativeImage.createFromBitmap(canvas, { width: s, height: s });
   }
   tray = new Tray(icon);
-  tray.setToolTip('EZCompanion v' + app.getVersion());
+  tray.setToolTip('Halo v' + app.getVersion());
   buildTrayMenu();
 }
 
@@ -2098,7 +2142,7 @@ function buildTrayMenu() {
   }));
 
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: `EZCompanion v${app.getVersion()} · ${BUILD_TAG}`, enabled: false },
+    { label: `Halo v${app.getVersion()} · ${BUILD_TAG}`, enabled: false },
     { type: 'separator' },
     {
       label: sleeping ? 'Show Planner' : 'Hide Planner',
@@ -2383,7 +2427,7 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(() => {
     // Windows identity: groups the app under its own taskbar/toast identity
     // instead of a generic "Electron" entry.
-    app.setAppUserModelId('com.ezcompanion.EZCompanion');
+    app.setAppUserModelId('com.halo.Halo');
     // Record the startup environment in the debug log: where the log lives
     // and every display the OS reports (id / label / size / position), so
     // summon behavior can be diagnosed straight from the file.
@@ -2393,7 +2437,9 @@ if (!app.requestSingleInstanceLock()) {
     createPetWindow();
     createStatusWindow();
     createChatTriggerWindow();
-    createScreenshotOverlay(anchorDisplay());
+    // The screenshot overlay is created lazily on first use (openScreenshotOverlay
+    // already handles a null overlay) instead of holding a full-screen transparent
+    // renderer process alive for the whole session.
     startClipboardWatcher();
     createTray();
     // Re-apply the layout after creation (safe even if a display changed
@@ -2419,12 +2465,16 @@ if (!app.requestSingleInstanceLock()) {
     // Belt & braces on Windows: PowerShell key watchers poll the raw key state
     // (Ctrl+Shift+S sleep/wake + Alt+C peek + Ctrl+Shift+Alt+S next screen),
     // so they still fire if another app owns the hotkey or the OS-level
-    // registration failed. The debounces in toggleSleep / setPeek absorb any
-    // duplicate between the paths.
+    // registration failed. Each watcher is a persistent PowerShell process
+    // polling every 30ms, so they only spawn for the shortcuts that actually
+    // NEED the fallback — when the OS-level RegisterHotKey succeeded the
+    // watcher would be pure overhead (extra process + constant CPU). Alt+C
+    // has no global shortcut at all, so its watcher always runs. The debounces
+    // in toggleSleep / setPeek absorb any duplicate between the paths.
     if (process.platform === 'win32') {
-      startShiftSKeyWatcher();
+      if (!shortcutOk) startShiftSKeyWatcher();
       startAltCWatcher();
-      startCycleKeyWatcher();
+      if (!cycleOk) startCycleKeyWatcher();
     }
   });
 }

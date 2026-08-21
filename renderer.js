@@ -1,4 +1,4 @@
-/* === EZCompanion Renderer (planner sidebar; works with or without Electron) === */
+/* === Halo Renderer (planner sidebar; works with or without Electron) === */
 
 // DOM elements
 const app = document.getElementById('app');
@@ -393,6 +393,12 @@ function maybeShowProtocol() {
 // The planner glass, popups and modal are interactive at once (no hover-arm
 // anymore). The renderer refreshes these on a 400ms timer so the hit-regions
 // always track the live layout.
+// Bounds are re-sent only when they actually change: the 400ms tick and the
+// state-change hooks all funnel through here, and the cursor poll in main
+// only needs the regions when they move. Skipping the IPC when nothing
+// changed cuts ~2.5 renderer→main wakes/sec down to ~0 while the layout is
+// static (the common case).
+let lastSentBoundsKey = '';
 function sendInteractiveBounds() {
   if (!hasElectron) return;
   const appRect = app.getBoundingClientRect();
@@ -438,6 +444,9 @@ function sendInteractiveBounds() {
     bounds.push({ x: r.left - appRect.left, y: r.top - appRect.top, w: r.width, h: r.height });
   }
 
+  const key = JSON.stringify(bounds);
+  if (key === lastSentBoundsKey) return;
+  lastSentBoundsKey = key;
   window.electronAPI.updateInteractiveBounds(bounds);
 }
 
@@ -506,17 +515,17 @@ function updateClock() {
 }
 
 // === Weather (live forecast via Open-Meteo — free, no key) ===
-// window.WolfWeather is the shared module loaded by weather.js; it caches the
+// window.HaloWeather is the shared module loaded by weather.js; it caches the
 // forecast + IP-based location in localStorage so the Info window reuses the
 // same fetch (one call per 10 min for the whole app).
 function updateWeather() {
   if (!settings.weather) {
     weatherIcon.textContent = '—'; weatherTemp.textContent = ''; weatherDesc.textContent = 'Weather off'; return;
   }
-  if (!window.WolfWeather || !window.WolfWeather.get) {
+  if (!window.HaloWeather || !window.HaloWeather.get) {
     weatherIcon.textContent = '🌡️'; weatherTemp.textContent = ''; weatherDesc.textContent = 'Weather unavailable'; return;
   }
-  window.WolfWeather.get().then((w) => {
+  window.HaloWeather.get().then((w) => {
     if (!settings.weather) return; // toggled off while fetching
     weatherIcon.textContent = w.icon || '—';
     weatherTemp.textContent = w.temp || '';
@@ -535,19 +544,27 @@ const quotes = [
 function updateQuote() { quoteText.textContent = quotes[Math.floor(Math.random() * quotes.length)]; }
 
 // Close popups when clicking anywhere else (the launcher and its ring are
-// excluded — they toggle their own state).
+// excluded — they toggle their own state). Each open card handles its own
+// inside clicks; clicking the planner/backdrop outside any card closes it.
 app.addEventListener('click', (e) => {
   if (e.target.closest('#browser-launcher')) return;
   if (e.target.closest('#radial-menu')) return;
   if (e.target.closest('#tasks-panel')) return;
   if (e.target.closest('#categories-panel')) return;
+  if (e.target.closest('#classes-panel')) return;
   if (e.target.closest('.popup-glass') || e.target.closest('.panel-glass')) return;
   closeRadialMenu();
   closeClipboardVault();
   closeAssistantPanel();
+  if (!infoPopup.classList.contains('popup-hidden')) { infoPopup.classList.add('popup-hidden'); }
   closeNotesPanel();
   closeCategoriesPanel();
+  closeClassesPanel();
   closeFocusPanel();
+  if (!settingsPanel.classList.contains('panel-hidden')) {
+    settingsPanel.classList.add('panel-hidden');
+  }
+  sendInteractiveBounds();
 });
 
 // Browser-only launcher button (hidden in Electron — the desktop app uses
@@ -627,7 +644,7 @@ function saveSettings() { localStorage.setItem('wolf-pet-settings', JSON.stringi
 // or a browser download as a fallback).
 function doExportData() {
   const payload = {
-    app: 'wolf',
+    app: 'halo',
     exportedAt: new Date().toISOString(),
     tasks,
     deadlines,
@@ -1005,7 +1022,8 @@ const ASSISTANT_HELP =
   '• "add task write report for 2h by Friday 3pm"\n' +
   '• "I have a test next Thursday at 2pm"\n' +
   '• "completed the report for 35 mins"\n' +
-  '• "delete task report" · "reopen task report"\n' +
+  '• "delete task report" · "reopen task report" · "delete the history test"\n' +
+  '• "edit the math test to next Thursday 2pm" · "rename write report to write essay"\n' +
   '• "start the focus timer for write report"\n' +
   '• "remind me at 5pm to call mom"\n' +
   '• "remember my history class is Monday Wednesday at 9am"\n' +
@@ -1137,7 +1155,7 @@ function assistantSlashCommand(q) {
       const c = categories.find((x) => x.name.toLowerCase() === a.toLowerCase());
       if (c) { category = c.id; continue; }
     }
-    tasks.unshift({ id: Date.now(), name, due, durationMin, done: false, category, recur, progressMin: 0 });
+    tasks.unshift({ id: nextItemId(), name, due, durationMin, done: false, category, recur, progressMin: 0 });
     saveTasks(); renderTasks(); refreshActiveView();
     let r = '✅ Added "' + name + '"';
     if (due) r += ' · due ' + fmtDateShort(due);
@@ -1155,7 +1173,7 @@ function assistantSlashCommand(q) {
       const t = parseTimeField(a); if (t) { time = t; continue; }
       const dt = parseDateField(a); if (dt !== null) { due = dt; continue; }
     }
-    const dl = { id: Date.now(), name, due, time, done: false };
+    const dl = { id: nextItemId(), name, due, time, done: false };
     deadlines.unshift(dl);
     saveDeadlines(); renderDeadlines(); refreshActiveView(); tickDeadlineReminders();
     warnDeadlineConflict(dl);
@@ -1287,6 +1305,9 @@ function assistantHandleText(raw) {
   if (/(?:complete|completed|done|finish|finished|did|knocked|checked)/.test(lq)) return assistantComplete(q);
   if (/(?:delete|remove|get\s+rid|drop)/.test(lq)) return assistantDelete(q);
   if (/\b(?:reschedule|move|snooze|postpone|push|bump)\b/.test(lq)) return assistantReschedule(q);
+  // "edit/rename/change/update <name>…" — change a task or deadline's name,
+  // date, time, duration or category from the chat.
+  if (/^(?:please\s+)?(?:edit|update|rename|change|modify)\s+/.test(lq)) return assistantEdit(q);
   // Weekly recap: "how was my week?" / "weekly summary".
   if (/(?:how\s+was\s+my\s+week|week(?:ly)?\s+(?:recap|summary|report|review)|my\s+week\s+(?:recap|summary|report)|recap\s+(?:my\s+)?week)/i.test(lq)) return assistantWeekRecap();
   // "plan my day: …" → split a list into tasks/deadlines.
@@ -1430,7 +1451,8 @@ async function assistantAIFallback(raw) {
     'Action types:',
     '  add_task — fields: name, due (YYYY-MM-DD or null), durationMin (number or null), category (name or null).',
     '  add_deadline — fields: name, due (YYYY-MM-DD or null), time (HH:MM 24h or null), category (class name or null).',
-    '  complete_task, delete_task, reopen_task — field: taskQuery (name or unique fragment).',
+    '  complete_task, delete_task, reopen_task, edit_item — field: taskQuery or name (matches tasks AND deadlines).',
+    '  edit_item — fields: name or taskQuery (item to change), newName (optional new name), due (YYYY-MM-DD or null), time (HH:MM or null), durationMin (number or null), category (name or null).',
     '  mark_progress — fields: taskQuery, minutes (number).',
     '  start_focus — fields: taskQuery (optional), durationMin (optional number).',
     '  set_view — field: view (one of tasks, calendar, week).',
@@ -1450,7 +1472,7 @@ async function assistantAIFallback(raw) {
     'Answer schedule questions ("what is my next class?", "when is history class?", "what days is math?") with type none, computing the next occurrence from memory.classes days + time and the provided current time — never invent a schedule.',
     'Rules: output valid JSON only; convert relative dates and times (tomorrow, next Thursday, 3pm, in 2 hours) to absolute values using the provided current time; dates are YYYY-MM-DD, times are 24-hour HH:MM.',
     'For questions (what is due, what can you do, what is my progress), use type none and put the full answer in reply using the provided state.',
-    'Only complete/delete/reopen/mark-progress tasks that actually exist in the provided task list; match by name. When several tasks match, pick the best one or ask in reply.',
+    'Only complete/delete/reopen/edit items that actually exist in the provided state; match by name. Tasks AND deadlines can be completed, deleted, reopened and edited (edit_item changes whichever matches). When several items match, pick the best one or ask in reply.',
     'Never invent tasks or deadlines. Use the lists you are given.',
     'When a request lists several items (e.g. "plan my day: gym at 7am, standup at 9:30, deep work 10 to 12"), return one action for EACH item in the actions array.',
     'Match the user intent to the best action type. For "start the focus timer for X", use start_focus with taskQuery X. For "show me how much I have done today", use show_stats. For "switch to week view", use set_view.',
@@ -1467,7 +1489,7 @@ async function assistantAIFallback(raw) {
           'Content-Type': 'application/json',
           Authorization: 'Bearer ' + key,
           'HTTP-Referer': 'https://localhost',
-          'X-Title': 'Wolf Assistant',
+          'X-Title': 'Halo Assistant',
         },
         body: JSON.stringify({
           model,
@@ -1529,7 +1551,7 @@ function assistantApplyAction(action) {
     const clsInfo = applyClassTo(name, dueDate ? { due: dueDate, time, rest: name } : null);
     if (clsInfo.when) dueDate = clsInfo.when.due;
     if (!category && clsInfo.category) category = clsInfo.category;
-    const t = { id: Date.now(), name, due: dueDate, durationMin, done: false, category, recur, progressMin: 0 };
+    const t = { id: nextItemId(), name, due: dueDate, durationMin, done: false, category, recur, progressMin: 0 };
     tasks.unshift(t);
     saveTasks(); renderTasks(); refreshActiveView();
     let r = '✅ Added "' + name + '"';
@@ -1566,7 +1588,7 @@ function assistantApplyAction(action) {
   if (type === 'remember_fact') {
     const text = String(action.text || action.name || '').trim();
     if (!text) return 'What should I remember?';
-    assistantMemory.facts.push({ id: Date.now(), text, at: Date.now() });
+    assistantMemory.facts.push({ id: nextItemId(), text, at: Date.now() });
     if (assistantMemory.facts.length > 100) assistantMemory.facts = assistantMemory.facts.slice(-100);
     saveMemory();
     return '🧠 Noted — I will remember that.';
@@ -1585,7 +1607,7 @@ function assistantApplyAction(action) {
       if (found) category = found.id;
     }
     if (!category && clsInfo.category) category = clsInfo.category;
-    const d = { id: Date.now(), name, due: dlDue, time: dlTime, done: false, category };
+    const d = { id: nextItemId(), name, due: dlDue, time: dlTime, done: false, category };
     deadlines.unshift(d);
     saveDeadlines(); renderDeadlines(); refreshActiveView(); tickDeadlineReminders();
     warnDeadlineConflict(d);
@@ -1634,6 +1656,21 @@ function assistantApplyAction(action) {
     if (r.error) return r.error;
     const where = fmtDateShort(r.when.due) + (r.when.time ? ' at ' + fmtTimeOfDay(r.when.time) : '');
     return '🔁 Moved "' + r.name + '" to ' + where + '.';
+  }
+  if (type === 'edit_item') {
+    const q = String(action.taskQuery || action.name || '').trim();
+    if (!q) return 'Which item should I edit? (name it)';
+    const extra = {
+      newName: String(action.newName || '').trim(),
+      due: /^\d{4}-\d{2}-\d{2}$/.test(action.due || '') ? action.due : '',
+      time: /^\d{2}:\d{2}$/.test(action.time || '') ? action.time : '',
+      durationMin: typeof action.durationMin === 'number' && action.durationMin > 0 ? Math.round(action.durationMin) : 0,
+      category: String(action.category || '').trim(),
+    };
+    if (!extra.newName && !extra.due && !extra.time && !extra.durationMin && !extra.category) {
+      return 'What should I change about "' + q + '"? (e.g. due, time, durationMin, category, newName)';
+    }
+    return assistantEditSearch(q, { ...extra, when: null });
   }
   if (type === 'show_clipboard') { openClipboardVault(); return '📋 Opened your clipboard history.'; }
   if (type === 'show_screenshots') { api.openScreenshotOverlay(); return '📷 Screenshot tool opened — drag to capture.'; }
@@ -1837,7 +1874,7 @@ function assistantAdd(q) {
   if (!category && clsInfo.category) category = clsInfo.category;
 
   if (isDeadline) {
-    const dl = { id: Date.now(), name, due: when ? when.due : '', time: when ? when.time : '', done: false, category };
+    const dl = { id: nextItemId(), name, due: when ? when.due : '', time: when ? when.time : '', done: false, category };
     deadlines.unshift(dl);
     saveDeadlines();
     renderDeadlines();
@@ -1851,7 +1888,7 @@ function assistantAdd(q) {
     return r;
   }
 
-  tasks.unshift({ id: Date.now(), name, due: when ? when.due : '', durationMin, done: false, category, recur, progressMin: 0 });
+  tasks.unshift({ id: nextItemId(), name, due: when ? when.due : '', durationMin, done: false, category, recur, progressMin: 0 });
   saveTasks();
   renderTasks();
   refreshActiveView();
@@ -1927,7 +1964,7 @@ function assistantReschedule(q) {
 
 function assistantPickTask(query, mode, extra) {
   if (!query) {
-    return mode === 'complete' ? 'Which task did you finish? (name it)' : 'Which task should I remove? (name it)';
+    return mode === 'complete' ? 'Which task or deadline did you finish? (name it)' : 'Which task or deadline should I remove? (name it)';
   }
   const lq = query.toLowerCase();
   const numMatch = lq.match(/^task\s*(\d+)$/);
@@ -1938,38 +1975,58 @@ function assistantPickTask(query, mode, extra) {
       if (t) { const p = ASSISTANT_PENDING.q; ASSISTANT_PENDING.q = null; return assistantApply(p.mode, t, p.extra); }
     }
     const t = tasks[n - 1];
-    if (t) return assistantApply(mode, t, extra);
+    if (t) return assistantApply(mode, { kind: 'task', item: t }, extra);
     return 'I don\'t see task #' + n + '.';
   }
-  let matches = tasks.filter(t => !t.done && t.name.toLowerCase().includes(lq));
-  if (!matches.length) matches = tasks.filter(t => t.name.toLowerCase().includes(lq));
+  // Drop trailing kind words so "complete the math test deadline" matches
+  // the item named "math test" instead of hunting for a row called
+  // "math test deadline".
+  const cleanLq = lq.replace(/\s+(?:deadline|task|reminder|event|item|appointment|meeting|assignment)\s*$/, '');
+  let matches = tasks.filter(t => !t.done && t.name.toLowerCase().includes(cleanLq)).map(item => ({ kind: 'task', item }));
+  if (!matches.length) matches = tasks.filter(t => t.name.toLowerCase().includes(cleanLq)).map(item => ({ kind: 'task', item }));
+  // Deadlines can be completed/deleted/reopened too.
+  if (!matches.length) matches = deadlines.filter(d => !d.done && d.name.toLowerCase().includes(cleanLq)).map(item => ({ kind: 'deadline', item }));
+  if (!matches.length) matches = deadlines.filter(d => d.name.toLowerCase().includes(cleanLq)).map(item => ({ kind: 'deadline', item }));
   if (!matches.length) {
-    return 'No task matching "' + query + '" — try "list my tasks" to see what\'s there.';
+    return 'No task or deadline matching "' + query + '" — try "list my tasks" to see what\'s there.';
   }
   if (matches.length === 1) return assistantApply(mode, matches[0], extra);
   ASSISTANT_PENDING.q = {
     mode, matches: matches.slice(0, 5), extra,
     hint: 'I asked which one — reply with the number (e.g. "2").',
   };
-  const lines = matches.slice(0, 5).map((t, i) =>
-    (i + 1) + '. "' + t.name + '"' + (t.due ? ' · ' + fmtDateShort(t.due) : '')).join('\n');
+  const lines = matches.slice(0, 5).map((m, i) =>
+    (i + 1) + '. "' + m.item.name + '"' + (m.item.due ? ' · ' + fmtDateShort(m.item.due) : '')).join('\n');
   return 'I found a few — which one?\n' + lines + '\n\n(Reply with the number)';
 }
 
-function assistantApply(mode, t, extra) {
+// Apply an action to a matched {kind: 'task'|'deadline', item} (a raw task
+// object is also accepted and treated as a task). Handles complete/delete/
+// reopen for BOTH kinds, progress for tasks, and edit for both.
+function assistantApply(mode, entry, extra) {
+  const t = entry && entry.item ? entry.item : entry; // tolerate raw task objects
+  const isDeadline = !!(entry && entry.kind === 'deadline');
   if (mode === 'complete') {
+    if (isDeadline) {
+      if (t.done) return '"' + t.name + '" is already done ✅';
+      completeDeadline(t.id);
+      return '✅ Completed "' + t.name + '". Nice work! 🎉';
+    }
     if (t.done) return '"' + t.name + '" is already done ✅';
     if (extra && extra.actualMin) t.actualMin = extra.actualMin;
     completeTask(t.id);
     return '✅ Completed "' + t.name + '"' + (extra && extra.actualMin ? ' — logged ' + extra.actualMin + ' min' : '') + '. Nice work! 🎉';
   } else if (mode === 'delete') {
-    deleteTask(t.id);
+    if (isDeadline) deleteDeadline(t.id);
+    else deleteTask(t.id);
     return '🗑 Removed "' + t.name + '".';
   } else if (mode === 'reopen') {
     if (!t.done) return '"' + t.name + '" is already open.';
-    reopenTask(t.id);
+    if (isDeadline) reopenDeadline(t.id);
+    else reopenTask(t.id);
     return '🔓 Reopened "' + t.name + '".';
   } else if (mode === 'progress') {
+    if (isDeadline) return 'Progress tracking applies to tasks — for the deadline try "complete ' + t.name + '" or "edit ' + t.name + '".';
     if (t.done) return '"' + t.name + '" is already done — reopen it first.';
     const mins = (extra && extra.minutes) || 15;
     const dur = Math.max(1, t.durationMin || 60);
@@ -1978,8 +2035,95 @@ function assistantApply(mode, t, extra) {
     saveTasks(); renderTasks(); refreshActiveView();
     const pct = taskProgressPct(t);
     return '📈 Logged ' + mins + ' min on "' + t.name + '" — now ' + pct + '% done.';
+  } else if (mode === 'edit') {
+    return applyItemEdit(entry, extra || {});
   }
   return '';
+}
+
+// "edit <name> …" / "rename <name> to <new>" / "update <name> …" — change a
+// task or deadline's name / date / time / duration / category from the chat.
+function assistantEdit(q) {
+  const isRename = /^(?:please\s+)?rename\b/i.test(q);
+  let rest = String(q || '').replace(/^(?:please\s+)?(?:edit|update|modify|change|rename)\s+(?:the\s+|my\s+|that\s+)?/i, '');
+  let newName = '';
+  const rn = rest.match(/^(.*?)\s+to\s+(?:be\s+)?(.+)$/i);
+  if (isRename) {
+    if (!rn) return 'Rename what, to what? Try: "rename write report to write essay".';
+    rest = rn[1];
+    newName = assistantCleanName(rn[2]);
+  }
+  const when = assistantExtractWhen(rest);
+  const name = assistantCleanName(when ? when.rest : rest);
+  if (!name) return 'What should I edit? Try: "edit the math test to next Thursday 2pm".';
+  // Duration: "for 2h" / "for 35 minutes" (tasks only).
+  let durationMin = 0;
+  const dur = rest.match(/(?:for|lasting|about)\s+(\d+(?:\.\d+)?)\s*(h(?:ours?)?|hrs?|m(?:ins?)?|min(?:utes?)?)\b/i);
+  if (dur) {
+    const n = parseFloat(dur[1]);
+    durationMin = Math.round(dur[2][0].toLowerCase() === 'h' ? n * 60 : n);
+  }
+  // Category / class tag: "in <category>" at the end.
+  let category = '';
+  const cat = rest.match(/\bin\s+([a-z0-9 _-]+?)\s*$/i);
+  if (cat) {
+    const found = categories.find(c => c.name.toLowerCase() === cat[1].trim().toLowerCase());
+    if (found) category = found.id;
+  }
+  const extra = { newName, when, durationMin, category };
+  if (!newName && !when && !durationMin && !category) {
+    return 'What should I change? Try "edit <name> to tomorrow 3pm" or "rename <name> to <new name>".';
+  }
+  return assistantEditSearch(name, extra);
+}
+
+// Find the item to edit (task OR deadline); ask which one when several match.
+function assistantEditSearch(query, extra) {
+  const lq = String(query || '').toLowerCase().replace(/\s+(?:deadline|task|reminder|event|item|appointment|meeting|assignment)\s*$/, '');
+  const tks = tasks.filter(t => !t.done && t.name.toLowerCase().includes(lq)).map(item => ({ kind: 'task', item }));
+  const dls = deadlines.filter(d => !d.done && d.name.toLowerCase().includes(lq)).map(item => ({ kind: 'deadline', item }));
+  const all = [...tks, ...dls];
+  if (!all.length) {
+    return 'No task or deadline matching "' + query + '" — try "list my tasks" to see what\'s there.';
+  }
+  if (all.length === 1) return applyItemEdit(all[0], extra);
+  ASSISTANT_PENDING.q = { mode: 'edit', matches: all.slice(0, 5), extra, hint: 'I asked which one — reply with the number (e.g. "2").' };
+  const lines = all.slice(0, 5).map((m, i) =>
+    (i + 1) + '. "' + m.item.name + '"' + (m.item.due ? ' · ' + fmtDateShort(m.item.due) : '')).join('\n');
+  return 'I found a few — edit which one?\n' + lines + '\n\n(Reply with the number)';
+}
+
+// Apply a change set to a matched {kind, item}. Empty fields mean "leave as
+// is" — only what the user actually specified is overwritten.
+function applyItemEdit(entry, extra) {
+  const it = entry.item;
+  const changes = [];
+  const when = extra.when || null;
+  const newName = String(extra.newName || '').trim();
+  const rawDue = extra.due != null ? String(extra.due) : (when ? when.due : '');
+  const rawTime = extra.time != null ? String(extra.time) : (when ? when.time : '');
+  const durationMin = typeof extra.durationMin === 'number' && extra.durationMin > 0 ? Math.round(extra.durationMin) : 0;
+  // The AI passes a category NAME; resolve it to the stored id exactly like
+  // add_task / add_deadline do, so the tag keeps its color and label.
+  let category = '';
+  if (extra.category) {
+    const found = categories.find((c) => c.name.toLowerCase() === String(extra.category).trim().toLowerCase());
+    if (found) category = found.id;
+  }
+
+  if (newName) { it.name = newName; changes.push('renamed to "' + it.name + '"'); }
+  if (rawDue) { it.due = rawDue; changes.push('due ' + fmtDateShort(rawDue) + (rawTime ? ' at ' + fmtTimeOfDay(rawTime) : '')); }
+  else if (rawTime && entry.kind === 'deadline') { it.due = dayKeyNow(); it.time = rawTime; changes.push('today at ' + fmtTimeOfDay(rawTime)); }
+  if (rawTime && entry.kind === 'deadline') { it.time = rawTime; }
+  if (durationMin && entry.kind === 'task') { it.durationMin = durationMin; changes.push('now ' + fmtMin(durationMin)); }
+  if (category) { it.category = category; const c = categories.find(x => x.id === category); if (c) changes.push('in ' + c.name); }
+  if (!changes.length) return 'Nothing to change for "' + it.name + '" — say what to update.';
+  if (entry.kind === 'deadline') {
+    saveDeadlines(); renderDeadlines(); refreshActiveView(); tickDeadlineReminders(); warnDeadlineConflict(it);
+  } else {
+    saveTasks(); renderTasks(); refreshActiveView();
+  }
+  return '✏️ "' + it.name + '" ' + changes.join(' · ') + '.';
 }
 
 function assistantHandleFollowUp(q) {
@@ -1991,7 +2135,7 @@ function assistantHandleFollowUp(q) {
     const when = assistantExtractWhen(q);
     if (!when) return null;
     ASSISTANT_PENDING.q = null;
-    const dl = { id: Date.now(), name: p.name, due: when.due, time: when.time, done: false };
+    const dl = { id: nextItemId(), name: p.name, due: when.due, time: when.time, done: false };
     deadlines.unshift(dl);
     saveDeadlines();
     renderDeadlines();
@@ -2063,7 +2207,7 @@ function assistantRemind(q) {
   }
   const name = assistantCleanName(when.rest);
   if (!name) return 'Remind you about what? Try: "remind me at 5pm to call mom"';
-  const dl = { id: Date.now(), name, due: when.due, time: when.time, done: false };
+  const dl = { id: nextItemId(), name, due: when.due, time: when.time, done: false };
   deadlines.unshift(dl);
   saveDeadlines();
   renderDeadlines();
@@ -2149,16 +2293,15 @@ function assistantPlan(raw) {
   const items = String(raw || '').split(/;\s*|\n|(?:\s+and\s+)/i).map(s => s.trim()).filter(Boolean);
   if (!items.length) return 'Give me your list, e.g. "plan my day: gym at 7am; standup 9:30; deep work 10 to 12".';
   let dls = 0, tks = 0;
-  let uid = Date.now();
   items.forEach(item => {
     const when = assistantExtractWhen(item);
     const name = assistantCleanName(when ? when.rest : item);
     if (!name) return;
     if (when && when.time) {
-      deadlines.unshift({ id: uid++, name, due: when.due || dayKeyNow(), time: when.time, done: false });
+      deadlines.unshift({ id: nextItemId(), name, due: when.due || dayKeyNow(), time: when.time, done: false });
       dls++;
     } else {
-      tasks.unshift({ id: uid++, name, due: (when && when.due) || '', durationMin: 0, done: false, recur: '', progressMin: 0 });
+      tasks.unshift({ id: nextItemId(), name, due: (when && when.due) || '', durationMin: 0, done: false, recur: '', progressMin: 0 });
       tks++;
     }
   });
@@ -2182,7 +2325,7 @@ function assistantEvent(q) {
   const clsInfo = applyClassTo(name, when0);
   const when = clsInfo.when;
   if (!when) return null; // no date at all → let other handlers try
-  const dl = { id: Date.now(), name, due: when.due, time: when.time, done: false, category: clsInfo.category };
+  const dl = { id: nextItemId(), name, due: when.due, time: when.time, done: false, category: clsInfo.category };
   deadlines.unshift(dl);
   saveDeadlines();
   renderDeadlines();
@@ -2229,7 +2372,7 @@ function assistantWorkOnDeadline(q) {
     const clsInfo = applyClassTo(target.name, null);
     if (clsInfo.category) category = clsInfo.category;
   }
-  tasks.unshift({ id: Date.now(), name: target.name, due: dayKey(new Date()), durationMin: durationMin || 0, done: false, category, recur: '', progressMin: 0 });
+  tasks.unshift({ id: nextItemId(), name: target.name, due: dayKey(new Date()), durationMin: durationMin || 0, done: false, category, recur: '', progressMin: 0 });
   saveTasks(); renderTasks(); refreshActiveView();
   let r = '✅ Made "' + target.name + '" a task for today';
   if (durationMin) r += ' · ' + fmtMin(durationMin);
@@ -2825,7 +2968,26 @@ function renderClasses() {
     del.title = 'Delete class';
     del.addEventListener('click', () => deleteClassRow(cls));
 
-    row.append(swatch, name, days, time, bell, del);
+    // Labeled schedule row: "Days" + the day toggles, then "Time" + the
+    // start-time picker — so it's obvious the class days and time are
+    // editable right here.
+    const daysWrap = document.createElement('div');
+    daysWrap.className = 'cls-field';
+    const daysLbl = document.createElement('span');
+    daysLbl.className = 'cls-fld';
+    daysLbl.textContent = 'Days';
+    daysWrap.appendChild(daysLbl);
+    daysWrap.appendChild(days);
+
+    const timeWrap = document.createElement('div');
+    timeWrap.className = 'cls-field';
+    const timeLbl = document.createElement('span');
+    timeLbl.className = 'cls-fld';
+    timeLbl.textContent = 'Time';
+    timeWrap.appendChild(timeLbl);
+    timeWrap.appendChild(time);
+
+    row.append(swatch, name, bell, del, daysWrap, timeWrap);
     list.appendChild(row);
   });
 }
@@ -2863,12 +3025,6 @@ function showPlanner() {
   tasksPanel.classList.remove('panel-hidden');
   renderDeadlines();
   renderTasks();
-  sendInteractiveBounds();
-}
-
-function hidePlanner() {
-  tasksPanel.classList.add('panel-hidden');
-  hideAddTaskModal();
   sendInteractiveBounds();
 }
 
@@ -2929,6 +3085,28 @@ function saveMemory() { localStorage.setItem(MEMORY_KEY, JSON.stringify(assistan
 // actions in one response), which made categories share an id and tasks get
 // tagged with the wrong class.
 let uidSeq = 0;
+
+// === Monotonic item id ===
+// Tasks and deadlines are created with `id: Date.now()`, which collides when
+// several items are added in the same millisecond (the AI can return many
+// add_task/add_deadline actions in ONE response, /plan loops rapidly, and a
+// scheduled reminder can land on the same tick). Two items sharing an id
+// silently break edit/complete/delete and the reminder records — they'd all
+// target the wrong row. Numbers are kept so existing numeric comparisons
+// keep working, but the sequence never reuses an id and always stays above
+// every id already in storage (clock skew / restored backups can't collide).
+let lastItemId = -1;
+function nextItemId() {
+  if (lastItemId === -1) {
+    // Seed above everything already stored once, on first use.
+    [tasks, deadlines].forEach((arr) => arr.forEach((x) => {
+      if (typeof x.id === 'number' && x.id > lastItemId) lastItemId = x.id;
+    }));
+  }
+  const t = Math.max(Date.now(), lastItemId + 1);
+  lastItemId = t;
+  return t;
+}
 function freshId(prefix) {
   uidSeq += 1;
   return (prefix || '') + Date.now().toString(36) + '-' + uidSeq.toString(36) + Math.random().toString(36).slice(2, 6);
@@ -3859,7 +4037,7 @@ function completeTask(id) {
   bumpStreak(); // finishing any task counts toward today's streak
   if (t.recur) {
     const nextDue = nextRecurDate(t.recur);
-    tasks.unshift({ id: Date.now(), name: t.name, due: nextDue, durationMin: t.durationMin, done: false, category: t.category, recur: t.recur, progressMin: 0 });
+    tasks.unshift({ id: nextItemId(), name: t.name, due: nextDue, durationMin: t.durationMin, done: false, category: t.category, recur: t.recur, progressMin: 0 });
     saveTasks(); renderTasks(); refreshActiveView();
     showToast('♻️ Next "' + t.name + '" scheduled' + (nextDue ? ' · ' + fmtDateShort(nextDue) : ''));
   }
@@ -3935,10 +4113,11 @@ function openItemModal(mode, id) {
       : (id ? '✏️ Edit Task' : '＋ New Task');
   document.getElementById('im-time-label').textContent =
     mode === 'deadline' ? '⏰ Due time' : '⏱ Time it takes';
-  // Category picker only exists for daily tasks.
+  // Category/class tag applies to BOTH tasks and deadlines (a deadline can
+  // belong to a class, e.g. a test in History).
   imCategory = existing && existing.category ? existing.category : '';
-  document.getElementById('im-cat-label').hidden = mode !== 'task';
-  document.getElementById('im-cats').hidden = mode !== 'task';
+  document.getElementById('im-cat-label').hidden = false;
+  document.getElementById('im-cats').hidden = false;
   // Unhide the modal FIRST so the wheels have real layout when they're
   // built (building them while display:none would clamp scrollTop to 0 and
   // snap the selection to 00:00 regardless of the chosen default).
@@ -3962,7 +4141,7 @@ function openItemModal(mode, id) {
     buildWheel(hWheel, wheelValues(0, 25), tmHours, (v) => { tmHours = v; });
     buildWheel(mWheel, wheelValues(5, 60), tmMins, (v) => { tmMins = v; });
   }
-  if (mode === 'task') buildCatChips();
+  buildCatChips();
   setTimeout(() => document.getElementById('im-name').focus(), 60);
 }
 
@@ -3985,9 +4164,9 @@ function saveItemModal() {
     let dl;
     if (imEditId) {
       dl = deadlines.find(x => x.id === imEditId);
-      if (dl) { dl.name = name; dl.due = due; dl.time = time; }
+      if (dl) { dl.name = name; dl.due = due; dl.time = time; dl.category = imCategory; }
     } else {
-      dl = { id: Date.now(), name, due, time, done: false };
+      dl = { id: nextItemId(), name, due, time, done: false, category: imCategory };
       deadlines.unshift(dl);
     }
     saveDeadlines();
@@ -4003,7 +4182,7 @@ function saveItemModal() {
       const t = tasks.find(x => x.id === imEditId);
       if (t) { t.name = name; t.due = due; t.durationMin = durationMin; t.category = imCategory; }
     } else {
-      tasks.unshift({ id: Date.now(), name, due, durationMin, done: false, category: imCategory, progressMin: 0 });
+      tasks.unshift({ id: nextItemId(), name, due, durationMin, done: false, category: imCategory, progressMin: 0 });
     }
     saveTasks();
     renderTasks();
@@ -4298,7 +4477,6 @@ function buildWheel(wrapEl, values, selected, onChange) {
 }
 
 // === Planner UI wiring ===
-document.getElementById('tasks-hide').addEventListener('click', (e) => { e.stopPropagation(); hidePlanner(); });
 // View switcher: 🎯 tasks / 📅 calendar / 📆 week (week runs in its own
 // top-of-screen window — main.js hides this sidebar while it's active).
 document.querySelectorAll('#view-switch .vs-btn').forEach((btn) => {
@@ -4561,7 +4739,7 @@ function html2canvasCapture(rect) {
   ctx.font = '14px Comfortaa, sans-serif';
   ctx.fillStyle = '#3a3226';
   ctx.textAlign = 'center';
-  ctx.fillText('✨ EZCompanion • Screenshot', rect.width / 2, rect.height / 2 - 10);
+  ctx.fillText('✨ Halo • Screenshot', rect.width / 2, rect.height / 2 - 10);
   ctx.font = '11px Comfortaa, sans-serif';
   ctx.fillStyle = '#8b7355';
   ctx.fillText(rect.width + '×' + rect.height + 'px', rect.width / 2, rect.height / 2 + 12);
@@ -4851,10 +5029,14 @@ function pauseFocus() {
 }
 
 function resetFocus() {
+  const elapsed = focusTimer.sessionStartAt ? (Date.now() - focusTimer.sessionStartAt) / 60000 : 0;
   focusTimer.running = false;
   clearInterval(focusTimer.interval);
   focusTimer.interval = null;
   commitFocusProgress();
+  // Stopping a session logs its elapsed minutes the same way pausing does —
+  // otherwise a session ended with Reset vanished from the history.
+  recordFocusSession(focusTimer.taskId, elapsed);
   focusTimer.remainingMs = focusTimer.totalMs;
   focusEl('focus-start').textContent = '▶ Start';
   focusPanel.classList.remove('running');
