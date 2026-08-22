@@ -62,7 +62,7 @@ let isPro = false;
 //   localStorage.setItem('halo-ai-proxy', 'http://localhost:3000/api/chat')
 const AI_PROXY_URL = (() => {
   try { const o = localStorage.getItem('halo-ai-proxy'); if (o) return o; } catch (e) {}
-  return 'https://YOUR-VERCEL-PROJECT.vercel.app/api/chat';
+  return 'https://ez-companion.vercel.app/';
 })();
 
 // Stable anonymous id (for free-tier limits / analytics server-side).
