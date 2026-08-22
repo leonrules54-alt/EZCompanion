@@ -1478,6 +1478,18 @@ function clearLicense() {
   try { fs.unlinkSync(licenseFile()); } catch (e) { /* nothing to remove */ }
 }
 
+// The raw (decrypted) license key, fetched only to send to the AI proxy for
+// server-side Pro entitlement checks. Empty when no license is active.
+function getDecryptedLicenseKey() {
+  const l = loadLicense();
+  if (!l || !l.encryptedKey) return '';
+  const buf = Buffer.from(l.encryptedKey, 'base64');
+  try {
+    if (safeStorage.isEncryptionAvailable()) return safeStorage.decryptString(buf);
+  } catch (e) { /* stored as plain base64 fallback (safeStorage was unavailable) */ }
+  return buf.toString('utf8');
+}
+
 // Validate a license key against Lemon Squeezy. MOCK for now so the activation
 // flow can be built and tested before billing is live: any key matching
 // HALO-PRO-* (case-insensitive) is accepted, plus the fixed demo key
@@ -1529,6 +1541,8 @@ ipcMain.handle('license-deactivate', () => {
   clearLicense();
   return { ok: true, ...licenseStatus() };
 });
+
+ipcMain.handle('license-get-key', () => getDecryptedLicenseKey());
 
 ipcMain.handle('get-cursor-position', () => {
   return screen.getCursorScreenPoint();

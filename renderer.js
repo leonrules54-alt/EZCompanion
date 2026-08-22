@@ -47,16 +47,38 @@ let calSelectedKey = null;     // calendar view: selected day 'YYYY-MM-DD'
 const settings = {
   alwaysOnTop: true,
   weather: true,
-  aiKey: '',              // OpenRouter API key for the AI assistant fallthrough (set in Settings)
   assistantMode: 'online', // 'online' (AI-first) or 'offline' (local terminal commands only)
   conflictWindowMin: 30,   // minutes: deadlines within this window on the same day "overlap"
 };
 
-// Pro license (freemium): true when a valid Pro key is activated. Loaded from
-// the main process via safeStorage-backed IPC — the renderer only ever sees
-// the activation STATUS, never the raw key. Core tasks, offline parsing and
-// basic widgets stay 100% free.
+// Pro license (freemium): true when a valid Pro key is activated (status is
+// loaded from main via safeStorage-backed IPC). Core tasks, offline parsing
+// and basic widgets stay 100% free. The raw key is fetched on-demand only to
+// send to the AI proxy for server-side entitlement checks.
 let isPro = false;
+
+// AI backend proxy (Vercel serverless) that holds the master OpenRouter key,
+// so users never paste their own. Override for local dev with:
+//   localStorage.setItem('halo-ai-proxy', 'http://localhost:3000/api/chat')
+const AI_PROXY_URL = (() => {
+  try { const o = localStorage.getItem('halo-ai-proxy'); if (o) return o; } catch (e) {}
+  return 'https://YOUR-VERCEL-PROJECT.vercel.app/api/chat';
+})();
+
+// Stable anonymous id (for free-tier limits / analytics server-side).
+function getClientId() {
+  try {
+    let id = localStorage.getItem('halo-client-id');
+    if (!id) {
+      id = (typeof crypto !== 'undefined' && crypto.randomUUID)
+        ? crypto.randomUUID()
+        : 'c-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+      try { localStorage.setItem('halo-client-id', id); } catch (e) {}
+    }
+    return id;
+  } catch (e) { return 'anon'; }
+}
+const clientId = getClientId();
 
 // === API wrapper (Electron or browser fallback) ===
 const hasElectron = !!(window.electronAPI);
@@ -611,11 +633,6 @@ document.getElementById('settings-close').addEventListener('click', (e) => { e.s
     if (id === 'setting-ontop') api.setAlwaysOnTop(this.checked);
   });
 });
-const aiKeyInput = document.getElementById('setting-ai-key');
-if (aiKeyInput) aiKeyInput.addEventListener('change', function() {
-  settings.aiKey = this.value.trim();
-  saveSettings();
-});
 const conflictMinInput = document.getElementById('setting-conflict-min');
 if (conflictMinInput) conflictMinInput.addEventListener('change', function() {
   const n = parseInt(this.value, 10);
@@ -637,8 +654,6 @@ function loadSettings() {
   try { Object.assign(settings, JSON.parse(localStorage.getItem('wolf-pet-settings')) || {}); } catch (e) {}
   document.getElementById('setting-weather').checked = settings.weather;
   document.getElementById('setting-ontop').checked = settings.alwaysOnTop;
-  const aiKeyEl = document.getElementById('setting-ai-key');
-  if (aiKeyEl) aiKeyEl.value = settings.aiKey || '';
   const cmEl = document.getElementById('setting-conflict-min');
   if (cmEl) cmEl.value = settings.conflictWindowMin != null ? settings.conflictWindowMin : 30;
   // Apply the saved on-top preference at startup — the window is created
@@ -1287,7 +1302,7 @@ function assistantSlashCommand(q) {
   if (cmd === 'help' || cmd === 'h') return SLASH_HELP;
   if (cmd === 'mode') {
     const m = (args[0] || '').toLowerCase();
-    if (m === 'online' || m === 'on') { settings.assistantMode = 'online'; saveSettings(); updateAssistantModeUI(); broadcastAssistantMode(); return '🌐 Online mode — free-form messages use the AI (OpenRouter).';
+    if (m === 'online' || m === 'on') { settings.assistantMode = 'online'; saveSettings(); updateAssistantModeUI(); broadcastAssistantMode(); return '🌐 Online mode — free-form messages use the built-in AI.';
     }
     if (m === 'offline' || m === 'off') { settings.assistantMode = 'offline'; saveSettings(); updateAssistantModeUI(); broadcastAssistantMode(); return '📴 Offline mode — instant local commands only (no AI).';
     }
@@ -1383,8 +1398,8 @@ function assistantHandleText(raw) {
   return null; // no rule matched — the AI fallthrough handles it (or a helpful hint)
 }
 
-// === AI fallthrough: when no rule matches, ask a real LLM (OpenRouter) to turn
-// the message into a structured app action. Needs an API key in Settings. ===
+// === AI fallthrough: when no rule matches, ask the AI (via the backend proxy)
+// to turn the message into a structured app action. No user API key needed. ===
 // Records the conversation and routes to the core handler. assistantHistory
 // feeds the AI's context so it can follow up across messages.
 async function assistantAnswer(raw) {
@@ -1396,15 +1411,14 @@ async function assistantAnswer(raw) {
 }
 
 async function assistantAnswerCore(raw) {
-  const key = (settings.aiKey || '').trim();
   const q = String(raw || '').replace(/\s+/g, ' ').trim()
     .replace(/^(oh|so|um|uh|ok|okay|hey|hi|yo|like|well|hmm|also)[,\s]+/i, '');
   const lq = q.toLowerCase();
 
   // These stay offline & instant: follow-up answers ("2"), help, and the
   // clipboard/screenshot view toggles. Everything else goes to the AI first
-  // when a key is set (so free-form requests are actually understood), with
-  // the offline rule parser as the fallback.
+  // when online (so free-form requests are actually understood), with the
+  // offline rule parser as the fallback.
   const offlineFirst =
     !!ASSISTANT_PENDING.q ||
     q[0] === '/' ||
@@ -1422,7 +1436,7 @@ async function assistantAnswerCore(raw) {
 
   let aiReason = null;
   const offline = settings.assistantMode === 'offline';
-  if (key && !offline && !offlineFirst) {
+  if (!offline && !offlineFirst) {
     const ai = await assistantAIFallback(raw);
     if (ai.ok) {
       console.log('[assistant] AI handled:', q);
@@ -1438,9 +1452,8 @@ async function assistantAnswerCore(raw) {
     return r;
   }
 
-  if (aiReason === 'bad-key') return '⚠️ Your OpenRouter key was rejected. Check it in Settings ⚙️ (it should start with sk-or-…). Offline commands still work: say help.';
-  if (aiReason) return '⚠️ AI unavailable right now (free models are rate-limited) and I couldn\'t match that offline. Offline commands still work: say help.';
-  return 'Hmm, I did not catch that — I understand tasks, deadlines, reminders, clipboard and screenshots. Say help for examples.\n\n💡 Add an OpenRouter API key in Settings (⚙️) for free-form AI — multi-step plans are a Pro feature.';
+  if (aiReason) return '⚠️ AI is unavailable right now — try again in a moment. Offline commands still work: say help.';
+  return 'Hmm, I did not catch that — I understand tasks, deadlines, reminders, clipboard and screenshots. Say help for examples.\n\n💎 Free-form AI is built in — no key needed. Multi-step plans are a Pro feature (activate in Settings ⚙️).';
 }
 
 // Free models on OpenRouter often wrap JSON in markdown fences or add prose,
@@ -1466,21 +1479,7 @@ function parseAssistantJson(content) {
   throw new Error('unterminated JSON object in response');
 }
 
-// Free models on OpenRouter are rate-limited per-provider (20 req/min,
-// ~50–1000 req/day) AND churn over time, so try a few in turn — a throttled
-// or delisted upstream never blocks the whole assistant. Ordered fastest
-// first for the structured-JSON extraction this assistant needs.
-const AI_MODELS = [
-  'inclusionai/ling-3.0-flash:free',
-  'openai/gpt-oss-20b:free',
-  'google/gemma-4-31b-it:free',
-  'nvidia/nemotron-3-super-120b-a12b:free',
-];
-
 async function assistantAIFallback(raw) {
-  const key = (settings.aiKey || '').trim();
-  if (!key) return { ok: false, reason: 'no-key' };
-
   const now = new Date();
   const state = {
     now: now.toISOString(),
@@ -1537,58 +1536,47 @@ async function assistantAIFallback(raw) {
     'Match the user intent to the best action type. For "start the focus timer for X", use start_focus with taskQuery X. For "show me how much I have done today", use show_stats. For "switch to week view", use set_view.',
   ].join('\n');
 
-  let lastError = null;
-  let badKey = false;
-  for (const model of AI_MODELS) {
-    if (badKey) break;
-    try {
-      const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: 'Bearer ' + key,
-          'HTTP-Referer': 'https://localhost',
-          'X-Title': 'Halo Assistant',
-        },
-        body: JSON.stringify({
-          model,
-          temperature: 0,
-          messages: [
-            { role: 'system', content: system },
-            { role: 'user', content: JSON.stringify({ request: raw, state }) },
-          ],
-        }),
-      });
-      if (res.status === 401 || res.status === 403) {
-        badKey = true;
-        throw new Error('key rejected (HTTP ' + res.status + ')');
-      }
-      if (!res.ok) {
-        const body = await res.text().catch(() => '');
-        lastError = new Error('HTTP ' + res.status + (body ? ' ' + body.slice(0, 160) : ''));
-        continue; // free model rate-limited upstream — try the next one
-      }
-      const data = await res.json();
-      const content = data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
-      if (!content) { lastError = new Error('empty response'); continue; }
-      const parsed = parseAssistantJson(content);
-      const list = parsed && Array.isArray(parsed.actions) ? parsed.actions
-        : (parsed && parsed.action ? [parsed.action] : (parsed && parsed.type ? [parsed] : []));
-      // Multi-action workflows (e.g. "plan my day: gym, standup, deep work")
-      // are the Pro feature. Free users still get single-action AI replies.
-      if (!isPro && Array.isArray(list) && list.length > 1) {
-        return { ok: true, reply: '💎 That is a multi-step plan — a Pro feature. Activate a license in Settings (⚙️) to run several actions at once, or ask me for one thing at a time.' };
-      }
-      const applied = assistantApplyActions(list);
-      if (applied) return { ok: true, reply: applied };
-      const reply = (parsed && typeof parsed.reply === 'string' && parsed.reply.trim()) || 'I understood, but I could not map that to an app action.';
-      return { ok: true, reply };
-    } catch (e) {
-      lastError = e;
-    }
+  // Send the full messages (system prompt + user request) to the backend
+  // proxy. The proxy holds the master OpenRouter key and picks a free or paid
+  // model based on the license, so the user never needs their own key.
+  const messages = [
+    { role: 'system', content: system },
+    { role: 'user', content: JSON.stringify({ request: raw, state }) },
+  ];
+  let licenseKey = '';
+  if (hasElectron && window.electronAPI && window.electronAPI.getLicenseKey) {
+    try { licenseKey = await window.electronAPI.getLicenseKey(); } catch (e) {}
   }
-  if (badKey) return { ok: false, reason: 'bad-key' };
-  return { ok: false, reason: 'unavailable' };
+
+  try {
+    const res = await fetch(AI_PROXY_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messages,
+        license: licenseKey || '',
+        clientId,
+      }),
+    });
+    if (!res.ok) return { ok: false, reason: 'unavailable' };
+    const data = await res.json().catch(() => ({}));
+    const content = data && data.content;
+    if (!content) return { ok: false, reason: 'unavailable' };
+    const parsed = parseAssistantJson(content);
+    const list = parsed && Array.isArray(parsed.actions) ? parsed.actions
+      : (parsed && parsed.action ? [parsed.action] : (parsed && parsed.type ? [parsed] : []));
+    // Multi-action workflows (e.g. "plan my day: gym, standup, deep work")
+    // are the Pro feature. Free users still get single-action AI replies.
+    if (!isPro && Array.isArray(list) && list.length > 1) {
+      return { ok: true, reply: '💎 That is a multi-step plan — a Pro feature. Activate a license in Settings (⚙️) to run several actions at once, or ask me for one thing at a time.' };
+    }
+    const applied = assistantApplyActions(list);
+    if (applied) return { ok: true, reply: applied };
+    const reply = (parsed && typeof parsed.reply === 'string' && parsed.reply.trim()) || 'I understood, but I could not map that to an app action.';
+    return { ok: true, reply };
+  } catch (e) {
+    return { ok: false, reason: 'unavailable' };
+  }
 }
 
 // Execute a structured action returned by the AI against the real data.

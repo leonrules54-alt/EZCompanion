@@ -492,7 +492,7 @@
     function setModeUI(mode) {
       currentMode = mode === 'offline' ? 'offline' : 'online';
       modeBtn.textContent = currentMode === 'offline' ? '📴' : '🌐';
-      modeBtn.title = currentMode === 'offline' ? 'Offline — local commands only' : 'Online — AI (OpenRouter)';
+      modeBtn.title = currentMode === 'offline' ? 'Offline — local commands only' : 'Online — AI';
     }
     modeBtn.addEventListener('click', () => {
       api.setAssistantMode(currentMode === 'offline' ? 'online' : 'offline');

@@ -250,4 +250,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getLicenseStatus: () => ipcRenderer.invoke('license-get-status'),
   activateLicense: (key) => ipcRenderer.invoke('license-activate', key),
   deactivateLicense: () => ipcRenderer.invoke('license-deactivate'),
+  // Raw (decrypted) key, fetched only to send to the AI proxy for server-side
+  // Pro checks. Empty string when no license is active.
+  getLicenseKey: () => ipcRenderer.invoke('license-get-key'),
 });
