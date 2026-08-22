@@ -46,31 +46,29 @@ jobs:
         run: npm run make
 
       # --- Optional cloud code-signing (Azure Artifact Signing) ---
-      # Runs only when the AZURE_* secrets are configured. Signing the
-      # Setup.exe + packaged app binaries removes the SmartScreen / Smart App
-      # Control warnings over time. See CODE_SIGNING.md for the one-time Azure
-      # setup. Releases still build and upload normally without it.
-      - name: Azure login (Artifact Signing)
-        if: ${{ secrets.AZURE_CLIENT_ID != '' }}
-        uses: azure/login@v3
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Sign Windows binaries (Azure Artifact Signing)
-        if: ${{ secrets.AZURE_CLIENT_ID != '' }}
-        uses: azure/artifact-signing-action@v2
-        with:
-          endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
-          signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT }}
-          certificate-profile-name: ${{ vars.AZURE_SIGNING_PROFILE }}
-          files-folder: '${{ github.workspace }}\out'
-          files-folder-filter: exe,dll
-          files-folder-recurse: true
-          timestamp-rfc3161: 'http://timestamp.acs.microsoft.com'
-          timestamp-digest: SHA256
-          timeout: 900
+      # Uncomment the steps below once the AZURE_* secrets are configured
+      # in the repo settings. See CODE_SIGNING.md for setup instructions.
+      # Releases build and upload normally without them.
+      #
+      # - name: Azure login (Artifact Signing)
+      #   uses: azure/login@v3
+      #   with:
+      #     client-id: ${{ secrets.AZURE_CLIENT_ID }}
+      #     tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+      #     subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      #
+      # - name: Sign Windows binaries (Azure Artifact Signing)
+      #   uses: azure/artifact-signing-action@v2
+      #   with:
+      #     endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+      #     signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+      #     certificate-profile-name: ${{ vars.AZURE_SIGNING_PROFILE }}
+      #     files-folder: '${{ github.workspace }}\\out'
+      #     files-folder-filter: exe,dll
+      #     files-folder-recurse: true
+      #     timestamp-rfc3161: 'http://timestamp.acs.microsoft.com'
+      #     timestamp-digest: SHA256
+      #     timeout: 900
 
       - name: Collect + rename artifacts
         shell: bash
