@@ -607,9 +607,11 @@
             </div>
             <div class="help-step">
               <h4>🍎 macOS — "Halo is damaged and can't be opened"</h4>
-              <p>This happens because the app isn't code-signed yet. Open <strong>Terminal</strong> and run this one command, then open Halo normally:</p>
-              <p style="margin-top:6px"><code style="background:rgba(255,255,255,0.08);padding:3px 8px;border-radius:6px;font-size:12px;user-select:all">xattr -cr /Applications/Halo.app</code></p>
-              <p style="margin-top:6px">Alternatively, right-click the .app icon, select <strong>Open</strong>, then click <strong>Open</strong> again in the pop-up dialog.</p>
+              <p>The app isn't code-signed yet (we're working on it!). Fix in 2 steps:</p>
+              <p style="margin-top:8px"><strong>1.</strong> Drag <strong>Halo.app</strong> from the DMG into your <strong>Applications</strong> folder.</p>
+              <p><strong>2.</strong> Open <strong>Terminal</strong> (Spotlight → type "Terminal"), paste this, press Enter:</p>
+              <p style="margin-top:4px"><code style="background:rgba(255,255,255,0.08);padding:3px 8px;border-radius:6px;font-size:12px;user-select:all">xattr -cr /Applications/Halo.app</code></p>
+              <p style="margin-top:6px;color:var(--accent-emerald);font-weight:600">That's it — run once, Halo opens normally forever after.</p>
             </div>
           </div>
         </details>
