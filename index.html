@@ -606,8 +606,10 @@
               <p>If Windows blocks the app entirely, go to <strong>Windows Security → App &amp; browser control → Smart App Control settings</strong> and switch it off — or <a href="https://github.com/leonrules54-alt/EZCompanion/releases/download/v2.2.0/Halo-Windows.zip">use our portable .zip</a> instead (unzip and run, nothing to install).</p>
             </div>
             <div class="help-step">
-              <h4>🍎 macOS Gatekeeper</h4>
-              <p>Right-click the .dmg or app icon, select <strong>Open</strong>, then click <strong>Open</strong> again in the pop-up dialog. After that it opens normally.</p>
+              <h4>🍎 macOS — "Halo is damaged and can't be opened"</h4>
+              <p>This happens because the app isn't code-signed yet. Open <strong>Terminal</strong> and run this one command, then open Halo normally:</p>
+              <p style="margin-top:6px"><code style="background:rgba(255,255,255,0.08);padding:3px 8px;border-radius:6px;font-size:12px;user-select:all">xattr -cr /Applications/Halo.app</code></p>
+              <p style="margin-top:6px">Alternatively, right-click the .app icon, select <strong>Open</strong>, then click <strong>Open</strong> again in the pop-up dialog.</p>
             </div>
           </div>
         </details>
