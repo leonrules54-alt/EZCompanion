@@ -1,4 +1,4 @@
-const { app, BrowserWindow, screen, ipcMain, globalShortcut, desktopCapturer, clipboard, nativeImage, Tray, Menu, shell, dialog } = require('electron');
+const { app, BrowserWindow, screen, ipcMain, globalShortcut, desktopCapturer, clipboard, nativeImage, Tray, Menu, shell, dialog, safeStorage } = require('electron');
 const crypto = require('crypto');
 
 // Bumped whenever the summon/wake/screen logic changes — shown in the tray
@@ -1435,7 +1435,100 @@ function stopCycleKeyWatcher() {
   if (cycleKeyWatcher) { cycleKeyWatcher.stop(); cycleKeyWatcher = null; }
 }
 
+// === Pro license (Lemon Squeezy) ===
+// Activation state lives in userData/license.json. The license key itself is
+// encrypted with Electron's safeStorage (DPAPI on Windows, Keychain on macOS)
+// so a plain-text key never sits on disk. The renderer only ever receives the
+// activation STATUS (isPro + plan), never the raw key.
+
+const licenseFile = () => path.join(app.getPath('userData'), 'license.json');
+let licenseCache = null; // { plan, email, activatedAt, encryptedKey }
+
+function loadLicense() {
+  if (licenseCache) return licenseCache;
+  try {
+    const data = JSON.parse(fs.readFileSync(licenseFile(), 'utf8'));
+    if (data && data.encryptedKey && data.plan) {
+      licenseCache = data;
+      return licenseCache;
+    }
+  } catch (e) { /* no license yet */ }
+  licenseCache = null;
+  return licenseCache;
+}
+
+function licenseStatus() {
+  const l = loadLicense();
+  if (!l) return { isPro: false, plan: null, email: null, activatedAt: null };
+  return { isPro: l.plan === 'pro' || l.plan === 'plus', plan: l.plan, email: l.email || null, activatedAt: l.activatedAt || null };
+}
+
+function saveLicense(data) {
+  try {
+    fs.mkdirSync(path.dirname(licenseFile()), { recursive: true });
+    fs.writeFileSync(licenseFile(), JSON.stringify(data, null, 2));
+    licenseCache = data;
+  } catch (e) {
+    dlog('license save failed:', e.message);
+  }
+}
+
+function clearLicense() {
+  licenseCache = null;
+  try { fs.unlinkSync(licenseFile()); } catch (e) { /* nothing to remove */ }
+}
+
+// Validate a license key against Lemon Squeezy. MOCK for now so the activation
+// flow can be built and tested before billing is live: any key matching
+// HALO-PRO-* (case-insensitive) is accepted, plus the fixed demo key
+// HALO-PRO-DEMO-KEY. Swap the body for the real
+// POST https://api.lemonsqueezy.com/v1/licenses/activate call when ready
+// (needs LEMON_SQUEEZY_API_KEY + LEMON_SQUEEZY_STORE_ID env vars).
+async function validateLicenseKey(key) {
+  const k = String(key || '').trim();
+  if (!k) return { ok: false, error: 'Enter a license key.' };
+  if (/^HALO-PRO-/i.test(k)) return { ok: true, plan: 'pro', email: 'demo@halo.app' };
+  // --- Real Lemon Squeezy activation (enable when billing is live) ---
+  // const apiKey = process.env.LEMON_SQUEEZY_API_KEY;
+  // const storeId = process.env.LEMON_SQUEEZY_STORE_ID;
+  // if (!apiKey || !storeId) return { ok: false, error: 'Billing is not configured yet.' };
+  // const res = await fetch('https://api.lemonsqueezy.com/v1/licenses/activate', {
+  //   method: 'POST',
+  //   headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+  //   body: JSON.stringify({ license_key: k, instance_name: 'halo-app' }),
+  // });
+  // const json = await res.json();
+  // if (!res.ok || json.errors) return { ok: false, error: 'Invalid or expired license key.' };
+  // const attrs = json.data && json.data.attributes;
+  // const variant = json.included && json.included.find((i) => i.type === 'variants');
+  // return { ok: true, plan: (variant && variant.attributes && variant.attributes.name) || 'pro', email: (attrs && attrs.customer_email) || null };
+  return { ok: false, error: 'Invalid license key. Keys look like HALO-PRO-XXXX-XXXX.' };
+}
+
 // === IPC Handlers ===
+
+ipcMain.handle('license-get-status', () => licenseStatus());
+
+ipcMain.handle('license-activate', async (_e, key) => {
+  const result = await validateLicenseKey(key);
+  if (!result.ok) return { ok: false, error: result.error };
+  const secret = String(key).trim();
+  const encryptedKey = safeStorage.isEncryptionAvailable()
+    ? safeStorage.encryptString(secret).toString('base64')
+    : Buffer.from(secret, 'utf8').toString('base64'); // fallback if safeStorage is unavailable
+  saveLicense({
+    plan: result.plan,
+    email: result.email || null,
+    activatedAt: new Date().toISOString(),
+    encryptedKey,
+  });
+  return { ok: true, ...licenseStatus() };
+});
+
+ipcMain.handle('license-deactivate', () => {
+  clearLicense();
+  return { ok: true, ...licenseStatus() };
+});
 
 ipcMain.handle('get-cursor-position', () => {
   return screen.getCursorScreenPoint();

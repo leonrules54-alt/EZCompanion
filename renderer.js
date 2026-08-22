@@ -52,6 +52,12 @@ const settings = {
   conflictWindowMin: 30,   // minutes: deadlines within this window on the same day "overlap"
 };
 
+// Pro license (freemium): true when a valid Pro key is activated. Loaded from
+// the main process via safeStorage-backed IPC — the renderer only ever sees
+// the activation STATUS, never the raw key. Core tasks, offline parsing and
+// basic widgets stay 100% free.
+let isPro = false;
+
 // === API wrapper (Electron or browser fallback) ===
 const hasElectron = !!(window.electronAPI);
 const api = {
@@ -257,6 +263,7 @@ function init() {
   updateWeather();
   updateQuote();
   loadSettings();
+  refreshLicenseStatus();
 
   if (hasElectron) {
     document.body.classList.add('electron-mode');
@@ -639,6 +646,58 @@ function loadSettings() {
   api.setAlwaysOnTop(settings.alwaysOnTop);
 }
 function saveSettings() { localStorage.setItem('wolf-pet-settings', JSON.stringify(settings)); }
+
+// === Pro license (freemium) UI ===
+function setLicenseUI(status) {
+  isPro = !!(status && status.isPro);
+  const badge = document.getElementById('license-badge');
+  const statusEl = document.getElementById('license-status');
+  const deact = document.getElementById('deactivate-license');
+  if (badge) { badge.textContent = isPro ? 'PRO' : 'Free'; badge.classList.toggle('pro', isPro); }
+  if (statusEl) statusEl.textContent = isPro
+    ? '✅ Pro active' + (status.plan ? ' — ' + String(status.plan).toUpperCase() : '') + (status.email ? ' · ' + status.email : '')
+    : '🔓 Free — offline commands, tasks, widgets & reminders are all free.';
+  if (deact) deact.hidden = !isPro;
+}
+
+async function refreshLicenseStatus() {
+  if (!hasElectron || !window.electronAPI || !window.electronAPI.getLicenseStatus) { setLicenseUI({ isPro: false }); return; }
+  try {
+    const status = await window.electronAPI.getLicenseStatus();
+    setLicenseUI(status);
+  } catch (e) {
+    setLicenseUI({ isPro: false });
+  }
+}
+
+function wireLicenseUI() {
+  const input = document.getElementById('setting-license-key');
+  const actBtn = document.getElementById('activate-license');
+  const deactBtn = document.getElementById('deactivate-license');
+  if (actBtn) actBtn.addEventListener('click', async () => {
+    if (!hasElectron) { showToast('💎 Licenses activate in the desktop app'); return; }
+    const key = input ? input.value.trim() : '';
+    if (!key) { showToast('⚠️ Enter a license key first'); return; }
+    actBtn.disabled = true;
+    actBtn.textContent = 'Activating…';
+    try {
+      const res = await window.electronAPI.activateLicense(key);
+      if (res && res.ok) { if (input) input.value = ''; showToast('🎉 Pro activated — welcome aboard!'); }
+      else showToast('⚠️ ' + ((res && res.error) || 'Activation failed'));
+    } catch (e) {
+      showToast('⚠️ Activation error — try again');
+    }
+    actBtn.disabled = false;
+    actBtn.textContent = 'Activate';
+    refreshLicenseStatus();
+  });
+  if (deactBtn) deactBtn.addEventListener('click', async () => {
+    if (!hasElectron) return;
+    try { await window.electronAPI.deactivateLicense(); showToast('License deactivated'); } catch (e) {}
+    refreshLicenseStatus();
+  });
+}
+wireLicenseUI();
 
 // Export tasks/deadlines/notes/settings to a JSON file (Electron save dialog
 // or a browser download as a fallback).
@@ -1381,7 +1440,7 @@ async function assistantAnswerCore(raw) {
 
   if (aiReason === 'bad-key') return '⚠️ Your OpenRouter key was rejected. Check it in Settings ⚙️ (it should start with sk-or-…). Offline commands still work: say help.';
   if (aiReason) return '⚠️ AI unavailable right now (free models are rate-limited) and I couldn\'t match that offline. Offline commands still work: say help.';
-  return 'Hmm, I did not catch that — I understand tasks, deadlines, reminders, clipboard and screenshots. Say help for examples.\n\n💡 Add an OpenRouter API key in Settings (⚙️) to let me handle free-form requests with AI.';
+  return 'Hmm, I did not catch that — I understand tasks, deadlines, reminders, clipboard and screenshots. Say help for examples.\n\n💡 Add an OpenRouter API key in Settings (⚙️) for free-form AI — multi-step plans are a Pro feature.';
 }
 
 // Free models on OpenRouter often wrap JSON in markdown fences or add prose,
@@ -1515,6 +1574,11 @@ async function assistantAIFallback(raw) {
       const parsed = parseAssistantJson(content);
       const list = parsed && Array.isArray(parsed.actions) ? parsed.actions
         : (parsed && parsed.action ? [parsed.action] : (parsed && parsed.type ? [parsed] : []));
+      // Multi-action workflows (e.g. "plan my day: gym, standup, deep work")
+      // are the Pro feature. Free users still get single-action AI replies.
+      if (!isPro && Array.isArray(list) && list.length > 1) {
+        return { ok: true, reply: '💎 That is a multi-step plan — a Pro feature. Activate a license in Settings (⚙️) to run several actions at once, or ask me for one thing at a time.' };
+      }
       const applied = assistantApplyActions(list);
       if (applied) return { ok: true, reply: applied };
       const reply = (parsed && typeof parsed.reply === 'string' && parsed.reply.trim()) || 'I understood, but I could not map that to an app action.';

@@ -284,6 +284,18 @@
           <span>OpenRouter key (AI assistant)</span>
           <input type="password" id="setting-ai-key" class="setting-text" placeholder="sk-or-v1-…" autocomplete="off" spellcheck="false">
         </label>
+        <div class="license-box">
+          <div class="setting-row">
+            <span>💎 Pro License</span>
+            <span class="license-badge" id="license-badge">Free</span>
+          </div>
+          <div class="license-row">
+            <input type="text" id="setting-license-key" class="setting-text" placeholder="HALO-PRO-XXXX-XXXX" autocomplete="off" spellcheck="false">
+            <button class="btn btn-ghost btn-sm" id="activate-license">Activate</button>
+          </div>
+          <div class="license-status" id="license-status">🔓 Free — offline commands, tasks, widgets &amp; reminders are all free.</div>
+          <button class="btn btn-ghost btn-sm btn-block" id="deactivate-license" hidden>Deactivate license</button>
+        </div>
         <label class="setting-row">
           <span>Conflict window (min)</span>
           <input type="number" id="setting-conflict-min" class="setting-text" min="0" max="240" step="5" value="30" inputmode="numeric">

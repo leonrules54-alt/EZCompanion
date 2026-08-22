@@ -244,4 +244,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Remove all listeners for a channel
   removeAllListeners: (channel) => ipcRenderer.removeAllListeners(channel),
+
+  // Pro license (Lemon Squeezy). The renderer only ever sees the activation
+  // STATUS (isPro + plan) — the key is encrypted in main via safeStorage.
+  getLicenseStatus: () => ipcRenderer.invoke('license-get-status'),
+  activateLicense: (key) => ipcRenderer.invoke('license-activate', key),
+  deactivateLicense: () => ipcRenderer.invoke('license-deactivate'),
 });
