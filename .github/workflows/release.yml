@@ -117,11 +117,11 @@ jobs:
         shell: bash
         run: |
           mkdir -p release
-          # Match only THIS version's artifacts (see the Windows job for why
-          # a bare find+head can silently pick up stale builds).
-          VERSION="$(node -p "require('./package.json').version")"
-          cp "$(find out/make -name "*${VERSION}*.dmg" | head -1)" release/Halo.dmg
-          cp "$(find out/make -name "*${VERSION}*.zip" | head -1)" release/Halo-macOS.zip
+          # maker-dmg outputs "Halo.dmg" (no version in filename), so a
+          # version-filtered find returns nothing and cp silently fails.
+          # The CI checkout is clean so there's only one .dmg / .zip.
+          cp "$(find out/make -name '*.dmg' | head -1)" release/Halo.dmg
+          cp "$(find out/make -name '*.zip' | head -1)" release/Halo-macOS.zip
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2

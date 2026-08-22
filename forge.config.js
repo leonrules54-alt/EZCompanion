@@ -60,6 +60,7 @@ module.exports = {
     // out/make/squirrel.windows/x64/Halo-<version> Setup.exe
     {
       name: '@electron-forge/maker-squirrel',
+      platforms: ['win32'],
       config: {
         name: 'Halo',
         authors: pkg.author || 'Halo',
